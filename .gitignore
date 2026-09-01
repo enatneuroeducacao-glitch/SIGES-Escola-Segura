@@ -1,0 +1,14 @@
+node_modules/
+backend/data/db.json
+.env
+.env.*
+!.env.example
+dist/
+build/
+*.log
+npm-debug.log*
+.DS_Store
+*.zip
+MAPA-SIGES.txt
+estrutura-siges.txt
+LEIA-ME.txt
