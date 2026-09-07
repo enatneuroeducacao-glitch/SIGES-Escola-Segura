@@ -1,7 +1,6 @@
 import React,{useMemo,useState}from'react';
-import{createRoot}from'react-dom/client';
-import{ShieldCheck,School,Users,TriangleAlert,HeartHandshake,MapPinned,Target,Activity,ArrowUpRight,ArrowDownRight,CheckCircle2,Clock3,Eye,Route,Brain,Search,ChevronRight}from'lucide-react';
-import'./styles.css';
+import{ShieldCheck,School,Users,TriangleAlert,HeartHandshake,MapPinned,Target,Activity,CheckCircle2,Clock3,Eye,Route,Brain,Search,ChevronRight}from'lucide-react';
+import'./radar.css';
 
 const risks=[
  {title:'Travessia sem proteção',place:'Portão principal · 07h00–08h00',type:'Trânsito',score:86,level:'CRÍTICA',icon:Route},
