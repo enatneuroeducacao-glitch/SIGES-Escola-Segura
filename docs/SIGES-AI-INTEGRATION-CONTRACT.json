@@ -1,0 +1,69 @@
+{
+  "contract": "SIGES-INTELLIGENCE",
+  "version": "1.0.0",
+  "purpose": "Interoperabilidade segura entre o SIGES e futuras camadas de IA/ENAT-HSI",
+  "producer": "SIGES Escola Segura",
+  "principles": [
+    "least_privilege",
+    "data_minimization",
+    "explainability",
+    "human_decision_required",
+    "auditability",
+    "versioned_events"
+  ],
+  "events": {
+    "school_safety_snapshot": {
+      "required": ["event_id", "occurred_at", "schema_version", "scope", "indicators"],
+      "scope": ["school", "municipality", "uf", "period"],
+      "indicators": [
+        "hsi_traffic",
+        "hsi_bullying",
+        "open_risks",
+        "pending_claims",
+        "active_action_plans",
+        "evidence_count",
+        "intervention_effectiveness"
+      ]
+    },
+    "risk_signal": {
+      "required": ["event_id", "occurred_at", "risk_id", "priority", "factors", "confidence"],
+      "priority_range": [0, 100],
+      "confidence_range": [0, 1]
+    },
+    "action_outcome": {
+      "required": ["event_id", "action_plan_id", "baseline", "follow_up", "outcome"]
+    }
+  },
+  "ai_interface": {
+    "allowed_operations": [
+      "read_aggregated_indicators",
+      "read_authorized_risk_signals",
+      "generate_explanations",
+      "generate_recommendations",
+      "compare_periods",
+      "detect_patterns"
+    ],
+    "forbidden_operations": [
+      "change_user_roles",
+      "approve_claims",
+      "issue_certificates",
+      "delete_evidence",
+      "modify_hsi_results",
+      "make_administrative_decisions_without_human_review"
+    ]
+  },
+  "future_connectors": [
+    {
+      "name": "CENTRAL_ENAT_HSI",
+      "status": "prepared",
+      "transport": "versioned_api",
+      "data_mode": "aggregated_or_explicitly_authorized"
+    },
+    {
+      "name": "TRAFFIC_AI",
+      "status": "prepared",
+      "transport": "versioned_api",
+      "data_mode": "least_privilege"
+    }
+  ]
+}
