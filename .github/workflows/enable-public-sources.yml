@@ -1,0 +1,35 @@
+name: Enable SIGES public sources
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install backend dependencies
+        working-directory: backend
+        run: npm install --no-audit --no-fund
+      - name: Apply integration
+        run: node scripts/enable-public-sources.js
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "Integration already applied"
+          else
+            git add backend/server.js frontend/src/siges-main.jsx
+            git commit -m "feat: connect SIGES to public data sources"
+            git push
+          fi
