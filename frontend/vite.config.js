@@ -33,7 +33,7 @@ function releaseLogin(){
 function releaseGuideReport(){
   return {
     name:'siges-aluno-guia-school-report',
-    enforce:'post',
+    enforce:'pre',
     transform(code,id){
       if(!id.endsWith('/frontend/src/siges-main.jsx')) return null;
       const re=/function Guide\(\{data\}\)\{[\\s\\S]*?\nfunction Reports/;
@@ -46,7 +46,7 @@ function Reports`;
 }
 
 export default defineConfig({
-  plugins:[normalizePublicSourcesImport(),releaseLogin(),releaseGuideReport(),react()],
+  plugins:[normalizePublicSourcesImport(),releaseGuideReport(),releaseLogin(),react()],
   base: process.env.GITHUB_ACTIONS ? '/SIGES-Escola-Segura/' : '/',
   build:{outDir:'dist'}
 });
