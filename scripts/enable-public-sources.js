@@ -1,0 +1,13 @@
+const fs=require('fs');
+const server='backend/server.js';
+const main='frontend/src/siges-main.jsx';
+let s=fs.readFileSync(server,'utf8');
+if(!s.includes("require('./public-sources')"))s=s.replace("const jwt=require('jsonwebtoken');","const jwt=require('jsonwebtoken');\nconst buildPublicSourcesRouter=require('./public-sources');");
+if(!s.includes("app.use('/api/public-sources'"))s=s.replace("app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));","app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));\napp.use('/api/public-sources',buildPublicSourcesRouter());");
+fs.writeFileSync(server,s);
+let m=fs.readFileSync(main,'utf8');
+if(!m.includes("from'./PublicSources'"))m=m.replace("import RadarIntelligence from './RadarIntelligence';","import RadarIntelligence from './RadarIntelligence';import PublicSources from './PublicSources';");
+if(!m.includes("['fontes','Fontes e Dados Externos'"))m=m.replace("['sinistros','Sinistros / Corredores',Route]","['sinistros','Sinistros / Corredores',Route],['fontes','Fontes e Dados Externos',Database]");
+if(!m.includes("page==='fontes'?<PublicSources/>") )m=m.replace("page==='sinistros'?<Crashes data={data}/>","page==='sinistros'?<Crashes data={data}/>:page==='fontes'?<PublicSources/>");
+fs.writeFileSync(main,m);
+console.log('SIGES public sources integration enabled');
