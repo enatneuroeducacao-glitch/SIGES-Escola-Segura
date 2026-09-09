@@ -1,0 +1,18 @@
+import React,{useMemo,useState}from'react';
+import{MapPinned,Search,ChevronRight,ShieldCheck}from'lucide-react';
+import{buildCorridorIntelligence}from'./radar-intelligence';
+const n=v=>Number(v)||0;const fmt=v=>v==null?'—':Number(v).toLocaleString('pt-BR');
+export default function RadarIntelligence({data}){
+ const[corridor,setCorridor]=useState(null),[q,setQ]=useState('');
+ const groups=useMemo(()=>buildCorridorIntelligence(data.matrix),[data.matrix]);
+ const filtered=useMemo(()=>groups.filter(g=>!q||g.corridor.includes(q.toLowerCase())),[groups,q]);
+ const selected=groups.find(g=>g.corridor===corridor);
+ return <section>
+  <div className="hero"><div><small>INTELIGÊNCIA TERRITORIAL · CORREDORES</small><h1>Radar Territorial</h1><p>Onde os sinais se concentram, quais escolas estão associadas e quais evidências justificam aprofundar a investigação.</p></div></div>
+  <div className="section-head"><div><small>PRIORIZAÇÃO TERRITORIAL 3.2</small><h2>Corredores em evidência</h2><p>Agregação analítica. Não substitui vistoria de campo ou decisão da autoridade competente.</p></div><span>{groups.length} corredores</span></div>
+  <div className="filters"><div className="search"><Search size={15}/><input placeholder="Pesquisar corredor..." value={q} onChange={e=>setQ(e.target.value)}/></div></div>
+  <div className="table-wrap"><table><thead><tr><th>Corredor</th><th>Escolas</th><th>P1</th><th>P2</th><th>DETRANS</th><th>Acid. 2024</th><th>IPE médio</th><th>Confiabilidade</th><th></th></tr></thead><tbody>{filtered.map(g=><tr key={g.corridor} onClick={()=>setCorridor(g.corridor)}><td><b>{g.corridor}</b></td><td>{g.schools.length}</td><td>{g.p1}</td><td>{g.p2}</td><td>{g.detransStudies||'—'}</td><td>{fmt(g.accident2024)}</td><td>{g.avgIpe?g.avgIpe.toFixed(1):'—'}</td><td>{g.avgReliability?g.avgReliability.toFixed(0):'—'}</td><td><ChevronRight size={16}/></td></tr>)}</tbody></table></div>
+  <div className="grid2" style={{marginTop:16}}><div className="panel"><small>COMO LER O RADAR</small><h3>Qualificar antes de agir</h3><p>O SIGES cruza HSI-DOTH-P, infraestrutura, exposição, estudos DETRANS e evidências de sinistros. A ausência de registro não é interpretada como segurança.</p><div className="cycle">{['OBSERVAR','QUALIFICAR','CORRELACIONAR','PRIORIZAR','AGIR','VERIFICAR','APRENDER'].map(x=><span key={x}>{x}</span>)}</div></div><div className="panel"><small>PROTEÇÃO DE DADOS</small><h3>Visão territorial</h3><p>O radar trabalha com indicadores agregados. Dados individuais de estudantes não fazem parte desta camada de inteligência territorial.</p><ShieldCheck size={22}/></div></div>
+  {selected&&<div className="modal"><div className="modal-card"><button className="close" onClick={()=>setCorridor(null)}>×</button><small>FICHA DO CORREDOR · INTELIGÊNCIA TERRITORIAL</small><h2>{selected.corridor}</h2><div className="cards">{[['Escolas',selected.schools.length,'associadas'],['P1',selected.p1,'prioridade crítica'],['P2',selected.p2,'prioridade muito alta'],['Estudos DETRANS',selected.detransStudies||0,'no corredor'],['Acidentes 2024',selected.accident2024??'—','registro territorial'],['IPE médio',selected.avgIpe.toFixed(1),'escala 0–100']].map(x=><div className="metric" key={x[0]}><small>{x[0]}</small><strong>{x[1]}</strong><span>{x[2]}</span></div>)}</div><h3 style={{marginTop:20}}>Escolas associadas</h3>{selected.schools.map((s,i)=><div className="row" key={s.Rank??i}><div><b>{s.Unidade}</b><span>{s.Bairro} · IPE {n(s['IPE Territorial 3.2']).toFixed(1)}</span></div><em>{s.Prioridade||'—'}</em></div>)}<div className="gate-note" style={{marginTop:16}}><MapPinned size={16}/> Sinal territorial para investigação. Confirmar condições atuais em campo antes de intervenção.</div></div></div>}
+ </section>;
+}
