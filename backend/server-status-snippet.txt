@@ -1,0 +1,1 @@
+API status contract: GET /api/health returns service, status, version, schema and timestamp. Root GET / should identify SIGES API and point to /api/health.
