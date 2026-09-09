@@ -16,5 +16,6 @@ function normalizePublicSourcesImport(){
 
 export default defineConfig({
   plugins:[normalizePublicSourcesImport(),react()],
+  base: process.env.GITHUB_ACTIONS ? '/SIGES-Escola-Segura/' : '/',
   build:{outDir:'dist'}
 });
