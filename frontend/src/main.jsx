@@ -1,1 +1,1 @@
-// temporary recovery pending
+RECOVERY_REQUIRED
