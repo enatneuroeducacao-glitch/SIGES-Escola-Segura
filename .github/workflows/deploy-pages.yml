@@ -33,13 +33,15 @@ jobs:
         working-directory: .
         run: node scripts/build-public-sources.mjs
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
       - name: Build SIGES
         run: npm run build
+      - name: Enable SPA route fallback
+        run: cp dist/index.html dist/404.html
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v4
         with:
           path: frontend/dist
   deploy:
