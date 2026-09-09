@@ -2,7 +2,7 @@ import React,{useEffect,useMemo,useState}from'react';
 import{createRoot}from'react-dom/client';
 import{ShieldCheck,LayoutDashboard,School,Map,FileSearch,Route,Database,TriangleAlert,ClipboardList,Target,UserCheck,FileCheck,ScrollText,Settings2,LockKeyhole,Search,LogOut,Printer,ExternalLink,RefreshCw}from'lucide-react';
 import{loadSigesData}from'./dataLoader';
-import RadarIntelligence from './RadarIntelligence';
+import RadarIntelligence from './RadarIntelligence';import PublicSources from './PublicSources';
 import PublicSources from './PublicSources';
 import'./styles.css';
 
