@@ -4,6 +4,7 @@ const fs=require('fs');
 const path=require('path');
 const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
+const buildPublicSourcesRouter=require('./public-sources');
 
 const app=express();
 const PORT=3001;
@@ -58,6 +59,7 @@ function auth(req,res,next){
 }
 
 app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));
+app.use('/api/public-sources',buildPublicSourcesRouter());
 
 app.post('/api/register',async(req,res)=>{
   const {role,name,email,password,profile={}}=req.body;
