@@ -6,7 +6,7 @@ import{supabase}from"@/lib/supabase";
 
 type Unit={id:string;name:string;rank:number;territorial_priority:string|null;ipe_territorial:number|null;hsi:number|null;territorial_confidence:string|null};
 type Project={id:string;name:string;objective:string|null;solution_type:string;status:string;school_count:number;phase_count:number;estimated_cost:number|null;baseline:any;targets:any};
-const p=(x:string|null)=>x?.startsWith("P1")?"P1":x?.startsWith("P2")?"P2":x?.startsWith("P3")?"P3":"P4";
+const p=(x:string|null|undefined)=>x?.startsWith("P1")?"P1":x?.startsWith("P2")?"P2":x?.startsWith("P3")?"P3":"P4";
 export default function Projeto(){
  const[units,setUnits]=useState<Unit[]>([]),[selected,setSelected]=useState<string[]>([]),[projects,setProjects]=useState<Project[]>([]),[name,setName]=useState("Projeto Piloto SIGES — Segurança Escolar"),[objective,setObjective]=useState("Validar um modelo integrado de diagnóstico, intervenção e mensuração da segurança no entorno escolar."),[solution,setSolution]=useState("ALUNO_GUIA"),[months,setMonths]=useState(4),[cost,setCost]=useState(""),[saving,setSaving]=useState(false),[message,setMessage]=useState("");
  const load=async()=>{const[u,r]=await Promise.all([supabase().from("units").select("id,name,rank,territorial_priority,ipe_territorial,hsi,territorial_confidence").order("ipe_territorial",{ascending:false}),supabase().from("strategy_projects").select("*").order("created_at",{ascending:false})]);setUnits((u.data as Unit[])||[]);setProjects((r.data as Project[])||[])};
