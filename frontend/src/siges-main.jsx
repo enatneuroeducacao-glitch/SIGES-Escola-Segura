@@ -15,6 +15,7 @@ import PublicSources from './PublicSources';
 
 
 
+
 import'./styles.css';
 
 const nav=[['dashboard','Dashboard',LayoutDashboard],['base','Base Escolar',School],['radar','Radar Territorial',Map],['evidencias','Evidências',FileSearch],['sinistros','Sinistros / Corredores',Route],['fontes','Fontes e Dados Externos',Database],['riscos','Riscos e Ocorrências',TriangleAlert],['reivindicacoes','Reivindicações',ClipboardList],['plano','Plano de Ação',Target],['guia','Aluno Guia',UserCheck],['relatorios','Relatórios',FileCheck],['auditoria','Auditoria',ScrollText],['configuracoes','Configurações',Settings2]];
