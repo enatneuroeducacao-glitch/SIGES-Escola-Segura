@@ -28,14 +28,15 @@ headers = [c.value for c in ws[1]]
 rows = list(ws.iter_rows(min_row=2, values_only=True))
 if len(rows) != 162:
     raise SystemExit(f'Esperadas 162 unidades; encontradas {len(rows)}.')
-source = {key(h): h for h in headers}
+
 values = []
 for row in rows:
     record = {key(h): v for h,v in zip(headers,row)}
     values.append('(' + ','.join(sql(record.get(c)) for c in COLS) + ')')
 
 updates = ','.join(f'{c}=excluded.{c}' for c in COLS[1:])
-text = f"insert into public.units ({','.join(COLS)}) values\n{',\n'.join(values)}\non conflict (name) do update set {updates};\n"
+value_block = ',\n'.join(values)
+text = f"insert into public.units ({','.join(COLS)}) values\n{value_block}\non conflict (name) do update set {updates};\n"
 OUT.parent.mkdir(parents=True, exist_ok=True)
 OUT.write_text(text, encoding='utf-8')
 print(f'Gerado: {OUT} ({len(text):,} caracteres)')
