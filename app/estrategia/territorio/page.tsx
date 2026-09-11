@@ -5,21 +5,128 @@ import Link from "next/link";
 import {ArrowLeft,Database,Map as MapIcon,Table2,Info} from "lucide-react";
 import {supabase} from "@/lib/supabase";
 
-type Unit={id:string;name:string;neighborhood:string|null;rank:number;hsi:number|null;ipe:number|null;ipe_territorial:number|null;territorial_priority:string|null;territorial_confidence:string|null;detrans_in_corridor:string|null;accident_rank_2024:number|null};
-type Group={name:string;rows:Unit[];count:number;avg:number;p1:number;p2:number;detrans:number;rank:number};
-const p=(x:string|null|undefined)=>x?.startsWith("P1")?"P1":x?.startsWith("P2")?"P2":x?.startsWith("P3")?"P3":"P4";
+type Unit={
+ id:string; name:string; neighborhood:string|null; rank:number;
+ hsi:number|null; ipe:number|null; ipe_territorial:number|null;
+ territorial_priority:string|null; territorial_confidence:string|null;
+ detrans_in_corridor:string|null; accident_rank_2024:number|null;
+};
+
+type Group={
+ name:string; rows:Unit[]; count:number; avg:number;
+ p1:number; p2:number; detrans:number; rank:number;
+};
+
+const priority=(value:string|null|undefined):"P1"|"P2"|"P3"|"P4"=>{
+ if(value?.startsWith("P1")) return "P1";
+ if(value?.startsWith("P2")) return "P2";
+ if(value?.startsWith("P3")) return "P3";
+ return "P4";
+};
+
+const numericScore=(unit:Unit):number|null=>{
+ const value=unit.ipe_territorial ?? unit.ipe;
+ return value==null || Number.isNaN(Number(value)) ? null : Number(value);
+};
 
 export default function Territorio(){
- const[units,setUnits]=useState<Unit[]>([]);const[q,setQ]=useState("");const[loading,setLoading]=useState(true);
- useEffect(()=>{supabase().from("units").select("id,name,neighborhood,rank,hsi,ipe,ipe_territorial,territorial_priority,territorial_confidence,detrans_in_corridor,accident_rank_2024").order("ipe_territorial",{ascending:false}).then(({data})=>{setUnits((data as Unit[])||[]);setLoading(false)})},[]);
- const groups=useMemo<Group[]>(()=>{const m=new Map<string,Unit[]>();units.forEach((u:Unit)=>{const k=u.neighborhood||"Não informado";const current=m.get(k);if(current)current.push(u);else m.set(k,[u])});return Array.from(m.entries()).map(([name,rows]:[string,Unit[]])=>{const scores=rows.map((r:Unit)=>r.ipe_territorial??r.ipe).filter((v):v is number=>v!=null&&!Number.isNaN(Number(v)));const p1=rows.filter((r:Unit)=>p(r.territorial_priority)==="P1").length,p2=rows.filter((r:Unit)=>p(r.territorial_priority)==="P2").length;return{name,rows,count:rows.length,avg:scores.length?scores.reduce((a,b)=>a+Number(b),0)/scores.length:0,p1,p2,detrans:rows.filter((r:Unit)=>r.detrans_in_corridor==="SIM").length,rank:rows.filter((r:Unit)=>r.accident_rank_2024!=null).length}}).sort((a:Group,b:Group)=>b.avg-a.avg)},[units]);
- const filtered=groups.filter((g:Group)=>g.name.toLowerCase().includes(q.toLowerCase()));
- return <main className="min-h-screen p-4 md:p-8 max-w-[1700px] mx-auto"><header className="mb-6"><Link href="/estrategia" className="muted text-sm flex items-center gap-2 mb-3"><ArrowLeft size={15}/> Centro Estratégico</Link><div className="text-cyan-300 text-xs font-bold tracking-[.2em]">SIGES • INTELIGÊNCIA TERRITORIAL</div><h1 className="text-3xl md:text-5xl font-black mt-1">Heatmap de prioridade territorial</h1><p className="muted max-w-4xl mt-2">Leitura comparativa por bairro, construída a partir das unidades cadastradas. A cor representa prioridade analítica agregada; não é mapa de engenharia nem mapa oficial de risco.</p></header>
- <section className="grid md:grid-cols-3 gap-3 mb-5"><div className="card p-4"><div className="muted text-xs">Bairros com unidades</div><div className="text-3xl font-black mt-1">{groups.length}</div></div><div className="card p-4"><div className="muted text-xs">P1 territorial</div><div className="text-3xl font-black mt-1">{units.filter((u:Unit)=>p(u.territorial_priority)==="P1").length}</div></div><div className="card p-4"><div className="muted text-xs">P2 territorial</div><div className="text-3xl font-black mt-1">{units.filter((u:Unit)=>p(u.territorial_priority)==="P2").length}</div></div></section>
- <section className="card p-4 mb-5"><div className="flex flex-col md:flex-row gap-3"><input value={q} onChange={e=>setQ(e.target.value)} placeholder="Filtrar bairro..." className="flex-1 bg-[#07111f] rounded-xl px-4 py-3 outline-none"/><Link href="/mapa" className="px-4 py-3 rounded-xl bg-cyan-950/50 text-cyan-200 flex items-center justify-center gap-2"><MapIcon size={16}/> Abrir mapa territorial</Link></div></section>
- {loading?<div className="card p-8">Carregando território...</div>:<><section className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">{filtered.map((g:Group)=><article key={g.name} className={`rounded-2xl border p-4 ${g.p1?"bg-red-950/30 border-red-800/70":g.p2?"bg-orange-950/25 border-orange-800/70":g.avg>=50?"bg-yellow-950/20 border-yellow-800/60":"bg-[#091624] border-[#1f3347]"}`}><div className="flex items-start justify-between gap-2"><div><div className="muted text-[10px] uppercase">Bairro</div><h2 className="font-black mt-1">{g.name}</h2></div><span className="text-xs font-bold">{g.avg.toFixed(1)}</span></div><div className="grid grid-cols-3 gap-2 mt-4 text-xs"><div><div className="muted">Unidades</div><b>{g.count}</b></div><div><div className="muted">P1</div><b>{g.p1}</b></div><div><div className="muted">P2</div><b>{g.p2}</b></div></div><div className="muted text-[11px] mt-4">DETRANS: {g.detrans} · ranking acidentes: {g.rank}</div></article>)}</section>
- <section className="card overflow-auto"><div className="p-4 border-b border-[#1f3347]"><div className="flex gap-2 items-center font-bold"><Table2 size={17} className="text-cyan-300"/> Tabela de comparação territorial</div></div><table className="w-full text-sm"><thead><tr className="text-left muted border-b border-[#1f3347]"><th className="p-3">Bairro</th><th className="p-3">Unidades</th><th className="p-3">IPE médio</th><th className="p-3">P1</th><th className="p-3">P2</th><th className="p-3">DETRANS</th><th className="p-3">Ranking acidentes</th></tr></thead><tbody>{filtered.map((g:Group)=><tr className="border-b border-[#132638]" key={g.name}><td className="p-3 font-semibold">{g.name}</td><td className="p-3">{g.count}</td><td className="p-3 font-bold">{g.avg.toFixed(1)}</td><td className="p-3">{g.p1}</td><td className="p-3">{g.p2}</td><td className="p-3">{g.detrans}</td><td className="p-3">{g.rank}</td></tr>)}</tbody></table></section></>}
- <section className="card p-4 mt-5"><div className="flex gap-2 items-start"><Info size={17} className="text-cyan-300 mt-0.5"/><p className="muted text-xs leading-5">O heatmap é uma visualização analítica derivada da base do SIGES. Não atribui causalidade, não substitui georreferenciamento de ocorrências e não deve ser usado isoladamente para decisões de engenharia.</p></div></section>
- <section className="card p-4 mt-5"><div className="flex gap-2 font-bold"><Database size={17} className="text-cyan-300"/> Rastreamento</div><p className="muted text-xs leading-5 mt-2">Fonte primária dos registros: base territorial SIGES. Para documentos externos, registrar data de extração, versão da matriz, fonte de cada evidência e método de agregação.</p></section>
- </main>
+ const [units,setUnits]=useState<Unit[]>([]);
+ const [q,setQ]=useState("");
+ const [loading,setLoading]=useState(true);
+ const [error,setError]=useState("");
+
+ useEffect(()=>{
+   let active=true;
+   const load=async()=>{
+     setLoading(true);
+     setError("");
+     const {data,error:queryError}=await supabase()
+       .from("units")
+       .select("id,name,neighborhood,rank,hsi,ipe,ipe_territorial,territorial_priority,territorial_confidence,detrans_in_corridor,accident_rank_2024")
+       .order("ipe_territorial",{ascending:false});
+     if(!active) return;
+     if(queryError){
+       setError(queryError.message);
+       setUnits([]);
+     }else{
+       setUnits((data ?? []) as Unit[]);
+     }
+     setLoading(false);
+   };
+   void load();
+   return()=>{active=false};
+ },[]);
+
+ const groups=useMemo<Group[]>(()=>{
+   const grouped:Record<string,Unit[]>={};
+   for(const unit of units){
+     const key=unit.neighborhood || "Não informado";
+     (grouped[key] ??= []).push(unit);
+   }
+   return Object.entries(grouped)
+     .map(([name,rows])=>{
+       const scores=rows.map(numericScore).filter((value):value is number=>value!==null);
+       const p1=rows.filter(unit=>priority(unit.territorial_priority)==="P1").length;
+       const p2=rows.filter(unit=>priority(unit.territorial_priority)==="P2").length;
+       const detrans=rows.filter(unit=>unit.detrans_in_corridor==="SIM").length;
+       const rank=rows.filter(unit=>unit.accident_rank_2024!=null).length;
+       return {
+         name,
+         rows,
+         count:rows.length,
+         avg:scores.length?scores.reduce((sum,value)=>sum+value,0)/scores.length:0,
+         p1,
+         p2,
+         detrans,
+         rank,
+       };
+     })
+     .sort((a,b)=>b.avg-a.avg);
+ },[units]);
+
+ const filtered=useMemo(()=>{
+   const term=q.trim().toLowerCase();
+   return term ? groups.filter(group=>group.name.toLowerCase().includes(term)) : groups;
+ },[groups,q]);
+
+ return <main className="min-h-screen p-4 md:p-8 max-w-[1700px] mx-auto">
+   <header className="mb-6">
+     <Link href="/estrategia" className="muted text-sm flex items-center gap-2 mb-3"><ArrowLeft size={15}/> Centro Estratégico</Link>
+     <div className="text-cyan-300 text-xs font-bold tracking-[.2em]">SIGES 3.5 • INTELIGÊNCIA TERRITORIAL</div>
+     <h1 className="text-3xl md:text-5xl font-black mt-1">Heatmap de prioridade territorial</h1>
+     <p className="muted max-w-4xl mt-2">Leitura comparativa por bairro, construída a partir das unidades cadastradas. A cor representa prioridade analítica agregada; não é mapa de engenharia nem mapa oficial de risco.</p>
+   </header>
+
+   <section className="grid md:grid-cols-3 gap-3 mb-5">
+     <div className="card p-4"><div className="muted text-xs">Bairros com unidades</div><div className="text-3xl font-black mt-1">{groups.length}</div></div>
+     <div className="card p-4"><div className="muted text-xs">P1 territorial</div><div className="text-3xl font-black mt-1">{units.filter(unit=>priority(unit.territorial_priority)==="P1").length}</div></div>
+     <div className="card p-4"><div className="muted text-xs">P2 territorial</div><div className="text-3xl font-black mt-1">{units.filter(unit=>priority(unit.territorial_priority)==="P2").length}</div></div>
+   </section>
+
+   <section className="card p-4 mb-5">
+     <div className="flex flex-col md:flex-row gap-3">
+       <input value={q} onChange={event=>setQ(event.target.value)} placeholder="Filtrar bairro..." className="flex-1 bg-[#07111f] rounded-xl px-4 py-3 outline-none"/>
+       <Link href="/mapa" className="px-4 py-3 rounded-xl bg-cyan-950/50 text-cyan-200 flex items-center justify-center gap-2"><MapIcon size={16}/> Abrir mapa territorial</Link>
+     </div>
+   </section>
+
+   {loading ? <div className="card p-8">Carregando território...</div> : error ? <div className="card p-6 text-red-300">Não foi possível carregar o território: {error}</div> : <>
+     <section className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 mb-6">
+       {filtered.map(group=><article key={group.name} className={`rounded-2xl border p-4 ${group.p1?"bg-red-950/30 border-red-800/70":group.p2?"bg-orange-950/25 border-orange-800/70":group.avg>=50?"bg-yellow-950/20 border-yellow-800/60":"bg-[#091624] border-[#1f3347]"}`}>
+         <div className="flex items-start justify-between gap-2"><div><div className="muted text-[10px] uppercase">Bairro</div><h2 className="font-black mt-1">{group.name}</h2></div><span className="text-xs font-bold">{group.avg.toFixed(1)}</span></div>
+         <div className="grid grid-cols-3 gap-2 mt-4 text-xs"><div><div className="muted">Unidades</div><b>{group.count}</b></div><div><div className="muted">P1</div><b>{group.p1}</b></div><div><div className="muted">P2</div><b>{group.p2}</b></div></div>
+         <div className="muted text-[11px] mt-4">DETRANS: {group.detrans} · ranking acidentes: {group.rank}</div>
+       </article>)}
+     </section>
+
+     <section className="card overflow-auto">
+       <div className="p-4 border-b border-[#1f3347]"><div className="flex gap-2 items-center font-bold"><Table2 size={17} className="text-cyan-300"/> Tabela de comparação territorial</div></div>
+       <table className="w-full text-sm"><thead><tr className="text-left muted border-b border-[#1f3347]"><th className="p-3">Bairro</th><th className="p-3">Unidades</th><th className="p-3">IPE médio</th><th className="p-3">P1</th><th className="p-3">P2</th><th className="p-3">DETRANS</th><th className="p-3">Ranking acidentes</th></tr></thead>
+       <tbody>{filtered.map(group=><tr className="border-b border-[#132638]" key={group.name}><td className="p-3 font-semibold">{group.name}</td><td className="p-3">{group.count}</td><td className="p-3 font-bold">{group.avg.toFixed(1)}</td><td className="p-3">{group.p1}</td><td className="p-3">{group.p2}</td><td className="p-3">{group.detrans}</td><td className="p-3">{group.rank}</td></tr>)}</tbody></table>
+     </section>
+   </>}
+
+   <section className="card p-4 mt-5"><div className="flex gap-2 items-start"><Info size={17} className="text-cyan-300 mt-0.5"/><p className="muted text-xs leading-5">O heatmap é uma visualização analítica derivada da base do SIGES. Não atribui causalidade, não substitui georreferenciamento de ocorrências e não deve ser usado isoladamente para decisões de engenharia.</p></div></section>
+   <section className="card p-4 mt-5"><div className="flex gap-2 font-bold"><Database size={17} className="text-cyan-300"/> Rastreamento</div><p className="muted text-xs leading-5 mt-2">Fonte primária dos registros: base territorial SIGES. Para documentos externos, registrar data de extração, versão da matriz, fonte de cada evidência e método de agregação.</p></div></section>
+ </main>;
 }
