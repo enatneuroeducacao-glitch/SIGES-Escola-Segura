@@ -23,7 +23,21 @@ jobs:
         run: npm install
 
       - name: Type check
-        run: npx tsc --noEmit
+        id: typecheck
+        continue-on-error: true
+        run: npx tsc --noEmit --pretty false 2>&1 | tee /tmp/siges-tsc.log; exit ${PIPESTATUS[0]}
+
+      - name: Upload TypeScript diagnostics
+        if: steps.typecheck.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: siges-tsc-diagnostics
+          path: /tmp/siges-tsc.log
+          retention-days: 1
+
+      - name: Fail on TypeScript errors
+        if: steps.typecheck.outcome == 'failure'
+        run: exit 1
 
       - name: Production build
         run: npm run build
