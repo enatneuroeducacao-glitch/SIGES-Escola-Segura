@@ -8,11 +8,7 @@
 
 ### 1. Objetivo
 
-Consolidar, por escola, a disponibilidade de evidências territoriais e a providência operacional recomendada pelo SIGES:
-
-- **NECESSITA DE ALUNO GUIA**;
-- **NECESSITA DE RELATÓRIOS COMPLEMENTARES**;
-- **ESCOLA COM DADOS SUFICIENTES PARA SELO ESCOLA SEGURA**.
+Consolidar, por escola, a disponibilidade de evidências territoriais e a providência operacional recomendada pelo SIGES.
 
 ### 2. Evidências consideradas
 
