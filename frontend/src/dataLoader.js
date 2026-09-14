@@ -1,5 +1,6 @@
 import DATA_B64 from '../data/joinville-3-2-data.gz.b64?raw';
 import{buildEvidenceTrace,formatEvidenceTrace}from'./evidenceTrace';
+import{buildDossierOpinion}from'./dossierOpinion';
 
 const clean=v=>String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/\bquinze\b/g,'15').replace(/\b(rua|r|av|av\.|avenida|rodovia|br[- ]?)\b/g,'').replace(/[^a-z0-9]+/g,' ').trim();
 const nonEmptyRow=x=>x&&Object.values(x).some(v=>String(v??'').trim()!=='');
@@ -171,6 +172,7 @@ export async function loadSigesData(){
       'Dados disponíveis SIGES':d.available,
       'Dados ausentes SIGES':d.missing.length?d.missing.join(', '):'Nenhum campo crítico ausente',
       'Providência recomendada SIGES':d.recommendation,
+      'Parecer Técnico SIGES':buildDossierOpinion({...x,...dossier,...priorityFields,'Prioridade Territorial 3.2':territorial.value,'Status da prioridade territorial SIGES':territorial.validated?'VALIDADA':'NÃO VALIDADA','Justificativa da prioridade territorial SIGES':territorial.reason}),
       'Rastreabilidade SIGES':formatEvidenceTrace(buildEvidenceTrace(x,data.sources))||'Nenhuma evidência pública adicional correspondente foi identificada para esta unidade.'
     };
   });
