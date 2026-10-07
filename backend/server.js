@@ -38,6 +38,14 @@ function defaultSettings(){
   };
 }
 function read(){
+  if(!fs.existsSync(DB)){
+    fs.mkdirSync(path.dirname(DB),{recursive:true});
+    fs.writeFileSync(DB,JSON.stringify({
+      users:[],audit:[],passwordResets:[],schools:[],students:[],courses:[],enrollments:[],guideTrainings:[],
+      assessments:[],hsiTraffic:[],hsiBullying:[],risks:[],claims:[],actionPlans:[],evidences:[],audits:[],certificates:[],
+      observations:[],studentProgress:[],settings:defaultSettings()
+    },null,2));
+  }
   const db=JSON.parse(fs.readFileSync(DB,'utf8'));
   if(!db.settings) db.settings=defaultSettings();
   for(const key of ['users','audit','passwordResets','schools','students','courses','enrollments','guideTrainings','assessments','hsiTraffic','hsiBullying','risks','claims','actionPlans','evidences','audits','certificates','observations','studentProgress']){
