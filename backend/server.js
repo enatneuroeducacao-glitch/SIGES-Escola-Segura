@@ -2,6 +2,7 @@ const express=require('express');
 const cors=require('cors');
 const fs=require('fs');
 const path=require('path');
+const zlib=require('zlib');
 const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const buildPublicSourcesRouter=require('./public-sources');
@@ -257,6 +258,84 @@ function canAccessStudent(user){return user && ['aluno','aluno_guia'].includes(u
 function studentForUser(db,user){const sid=user.profile?.studentId;return db.students.find(s=>s.id===sid || s.userId===user.id);}
 function schoolForUser(db,user){const sid=user.profile?.schoolId;return db.schools.find(s=>s.id===sid || s.managerUserId===user.id);}
 function ensureStudentCollections(db){for(const key of ['observations','studentProgress']) if(!Array.isArray(db[key])) db[key]=[];}
+function normTerritory(v){
+  return String(v??'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/\\b(rua|r|av|av\\.|avenida|rodovia|br[- ]?)\\b/g,'').replace(/[^a-z0-9]+/g,' ').trim();
+}
+function readSigesTerritory(){
+  try{
+    const file=path.join(__dirname,'..','frontend','data','joinville-3-2-data.gz.b64');
+    if(!fs.existsSync(file)) return null;
+    const b64=fs.readFileSync(file,'utf8').replace(/\\s+/g,'');
+    const json=JSON.parse(zlib.gunzipSync(Buffer.from(b64,'base64')).toString('utf8'));
+    return {
+      matrix:Array.isArray(json['MATRIZ 3.2'])?json['MATRIZ 3.2']:[],
+      evidencias:Array.isArray(json['EVIDÊNCIAS TERRITORIAIS'])?json['EVIDÊNCIAS TERRITORIAIS']:[],
+      sinistros:Array.isArray(json['SINISTROS_CORREDORES'])?json['SINISTROS_CORREDORES']:[]
+    };
+  }catch{return null}
+}
+function matchTerritorialSchool(school,data){
+  if(!school||!data)return null;
+  const name=normTerritory(school.name),bairro=normTerritory(school.bairro),address=normTerritory(school.address);
+  let row=data.matrix.find(x=>{
+    const u=normTerritory(x.Unidade),b=normTerritory(x.Bairro),a=normTerritory(x.Endereço);
+    return (u&&name&&(u===name||u.includes(name)||name.includes(u))) ||
+      (a&&address&&(a.includes(address)||address.includes(a))) ||
+      (b&&bairro&&u&&b===bairro&&name&&u.includes(name));
+  });
+  if(!row)return null;
+  const corridor=normTerritory(row['Corredor normalizado']||row.Corredor||row.Via||row.Endereço);
+  const evidencias=data.evidencias.filter(e=>{
+    const u=normTerritory(e['Unidade escolar associada']),p=normTerritory(e.Ponto),v=normTerritory(e['Via/Corredor']);
+    return (u&&normTerritory(row.Unidade)===u)||(p&&bairro&&p.includes(bairro))||(v&&corridor&&(v.includes(corridor)||corridor.includes(v)));
+  }).slice(0,20);
+  const sinistros=data.sinistros.filter(x=>{
+    const v=normTerritory(x.Via||x.Corredor);
+    return corridor&&v&&(v.includes(corridor)||corridor.includes(v));
+  }).slice(0,10);
+  return {row,evidencias,sinistros};
+}
+function schoolSigesContext(db,school){
+  const data=readSigesTerritory(),match=matchTerritorialSchool(school,data);
+  if(!match)return {available:false,source:'SIGES — Matriz Territorial 3.2'};
+  const x=match.row;
+  return {
+    available:true,source:'SIGES — Matriz Territorial 3.2',schoolId:school.id,
+    territorial:{
+      unidade:x.Unidade||school.name,bairro:x.Bairro||school.bairro,endereco:x.Endereço||school.address,
+      hsi:x['HSI-DOTH-P']??null,ipe:x['IPE Territorial 3.2']??null,prioridade:String(x['Prioridade Territorial 3.2']||x.Prioridade||'—'),
+      dimensions:{D:x.D,O:x.O,T:x.T,H:x.H,P:x.P},
+      corridor:x['Corredor normalizado']||x.Corredor||x.Via||null,
+      accidents2024:x['Acidentes corredor 2024']??null,accidents2025:x['Acidentes corredor 2025']??null,
+      detrans:x['Estudos DETRANS']??null,speed:x['Velocidade km/h']??x.Velocidade??null,
+      cycling:x['Infraestrutura cicloviária']??null
+    },
+    evidences:match.evidencias.map(e=>({tipo:e.Tipo,ponto:e.Ponto,natureza:e.Natureza,result:e['Valor/resultado'],year:e['Data/ano'],source:e['Fonte oficial']})),
+    corridors:match.sinistros.map(x=>({via:x.Via||x.Corredor,accidents2024:x['Acidentes 2024'],accidents2025:x['Acidentes 2025'],variation:x['Variação 2024-2025']}))
+  };
+}
+function studentSigesContext(db,school){
+  const c=schoolSigesContext(db,school);
+  if(!c.available)return c;
+  const p=c.territorial.prioridade;
+  const band=/P1|P2/.test(p)?'atenção prioritária':/P3/.test(p)?'atenção elevada':'contexto territorial monitorado';
+  return {available:true,source:c.source,schoolId:c.schoolId,territory:{
+    escola:c.territorial.unidade,bairro:c.territorial.bairro,corredor:c.territorial.corridor,prioridade:band,
+    temas:['travessia','visibilidade','velocidade percebida','calçada','sinalização','iluminação','bicicletas e motocicletas'],
+    evidenciasCount:c.evidences.length,corridorsCount:c.corridors.length,
+    acidentes2025Disponivel:c.territorial.accidents2025!=null
+  }};
+}
+app.get('/api/student/siges-context',auth,(req,res)=>{
+  if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});
+  const db=read(),student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Aluno não localizado.'});
+  const school=db.schools.find(s=>s.id===student.schoolId);res.json({context:studentSigesContext(db,school)});
+});
+app.get('/api/school/siges-context',auth,(req,res)=>{
+  if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});
+  const db=read(),school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada.'});
+  res.json({context:schoolSigesContext(db,school)});
+});
 app.get('/api/student/me',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();ensureStudentCollections(db);const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Cadastro escolar do aluno não localizado.'});const school=db.schools.find(s=>s.id===student.schoolId);res.json({user:safe(req.user),student:{...student,schoolName:school?.name||'Escola não localizada'},school:school||null});});
 app.get('/api/student/dashboard',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();ensureStudentCollections(db);const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Cadastro escolar do aluno não localizado.'});const school=db.schools.find(s=>s.id===student.schoolId);const progress=db.studentProgress.filter(x=>x.studentId===student.id);const claims=db.claims.filter(x=>x.studentId===student.id);const observations=db.observations.filter(x=>x.studentId===student.id);const training=(db.guideTrainings||[]).find(x=>x.studentId===student.id)||null;res.json({student:{...student,schoolName:school?.name||''},school:school||null,progress,claims,observations,training,summary:{completedLessons:progress.filter(x=>x.completed).length,claims:claims.length,observations:observations.length,courseProgress:training?.progress||0}});});
 app.post('/api/student/observations',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();ensureStudentCollections(db);const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Aluno não localizado.'});const {category,description,location,schoolContext}=req.body||{};if(!category||!description)return res.status(400).json({error:'Informe o tipo de situação e descreva o que foi observado.'});const item={id:'obs_'+Date.now(),studentId:student.id,schoolId:student.schoolId,category:String(category).trim(),description:String(description).trim(),location:String(location||'').trim(),schoolContext:String(schoolContext||'').trim(),status:'received',createdAt:new Date().toISOString()};db.observations.push(item);audit(db,'STUDENT_OBSERVATION_CREATED',req.user.id,{observationId:item.id,category:item.category});write(db);res.status(201).json({observation:item});});
