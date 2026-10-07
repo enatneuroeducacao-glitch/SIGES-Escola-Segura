@@ -1,1 +1,1 @@
-const p=location.pathname.replace(/\/$/,'');if(p==='/aluno'||p==='/escola'){import('./portal.jsx')}else{import('./siges-main.jsx')}
+const p=location.pathname.replace(/\/$/,'');if(p==='/aluno'||p==='/escola'||p==='/verificar-email'){import('./portal.jsx')}else{import('./siges-main.jsx')}
