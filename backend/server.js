@@ -3,6 +3,7 @@ const cors=require('cors');
 const fs=require('fs');
 const path=require('path');
 const zlib=require('zlib');
+const crypto=require('crypto');
 const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const buildPublicSourcesRouter=require('./public-sources');
@@ -42,14 +43,14 @@ function read(){
   if(!fs.existsSync(DB)){
     fs.mkdirSync(path.dirname(DB),{recursive:true});
     fs.writeFileSync(DB,JSON.stringify({
-      users:[],audit:[],passwordResets:[],schools:[],students:[],courses:[],enrollments:[],guideTrainings:[],
+      users:[],audit:[],passwordResets:[],emailVerifications:[],schools:[],students:[],courses:[],enrollments:[],guideTrainings:[],
       assessments:[],hsiTraffic:[],hsiBullying:[],risks:[],claims:[],actionPlans:[],evidences:[],audits:[],certificates:[],
       observations:[],studentProgress:[],settings:defaultSettings()
     },null,2));
   }
   const db=JSON.parse(fs.readFileSync(DB,'utf8'));
   if(!db.settings) db.settings=defaultSettings();
-  for(const key of ['users','audit','passwordResets','schools','students','courses','enrollments','guideTrainings','assessments','hsiTraffic','hsiBullying','risks','claims','actionPlans','evidences','audits','certificates','observations','studentProgress']){
+  for(const key of ['users','audit','passwordResets','emailVerifications','schools','students','courses','enrollments','guideTrainings','assessments','hsiTraffic','hsiBullying','risks','claims','actionPlans','evidences','audits','certificates','observations','studentProgress']){
     if(!Array.isArray(db[key])) db[key]=[];
   }
   return db;
@@ -58,6 +59,29 @@ function write(db){fs.writeFileSync(DB,JSON.stringify(db,null,2))}
 function safe(u){const {passwordHash,...x}=u;return x}
 function token(u){return jwt.sign({id:u.id,role:u.role},SECRET,{expiresIn:'8h'})}
 function audit(db,action,userId,details={}){db.audit.push({id:Date.now().toString(),action,userId,details,at:new Date().toISOString()})}
+const APP_URL=(process.env.PUBLIC_APP_URL||'https://escola-segura.hsi-doth-pg.com.br').replace(/\/$/,'');
+const RESEND_FROM=process.env.RESEND_FROM||'Escola Segura <suporte@hsi-doth-pg.com.br>';
+async function sendEmail({to,subject,html}){
+  if(!process.env.RESEND_API_KEY){console.warn('RESEND_API_KEY não configurada; e-mail não enviado para',to);return {ok:false,configured:false};}
+  try{
+    const r=await fetch('https://api.resend.com/emails',{method:'POST',headers:{'Content-Type':'application/json',Authorization:'Bearer '+process.env.RESEND_API_KEY},body:JSON.stringify({from:RESEND_FROM,to:[to],subject,html,tags:[{name:'category',value:'escola_segura'}]})});
+    const body=await r.json().catch(()=>({}));
+    if(!r.ok){console.error('Resend error',r.status,body);return {ok:false,configured:true,error:body};}
+    return {ok:true,configured:true,id:body.id||null};
+  }catch(error){console.error('Resend exception',error.message);return {ok:false,configured:true,error:{message:error.message}};}
+}
+function createEmailVerification(db,u){
+  db.emailVerifications=db.emailVerifications||[];
+  db.emailVerifications=db.emailVerifications.filter(x=>x.userId!==u.id);
+  const raw=crypto.randomBytes(32).toString('hex');
+  const tokenHash=crypto.createHash('sha256').update(raw).digest('hex');
+  db.emailVerifications.push({id:'ev_'+Date.now(),userId:u.id,tokenHash,expiresAt:Date.now()+86400000,createdAt:new Date().toISOString()});
+  return raw;
+}
+async function sendVerificationEmail(u,raw){
+  const url=APP_URL+'/verificar-email?token='+encodeURIComponent(raw);
+  return sendEmail({to:u.email,subject:'Confirme seu e-mail — Escola Segura do Aluno',html:`<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:32px;color:#18324a"><h1 style="margin:0 0 12px">🛡️ Escola Segura do Aluno</h1><p>Olá, <b>${u.name}</b>.</p><p>Recebemos seu cadastro. Para confirmar que este e-mail pertence a você, clique no botão abaixo:</p><p><a href="${url}" style="display:inline-block;padding:13px 20px;background:#173f68;color:#fff;text-decoration:none;border-radius:8px">Confirmar meu e-mail</a></p><p>Depois da confirmação, seu cadastro seguirá para a validação do vínculo escolar e, quando necessário, da Administração SIGES.</p><p style="font-size:12px;color:#667">Este link é válido por 24 horas.</p></div>`});
+}
 function auth(req,res,next){
   const h=req.headers.authorization||'',t=h.replace(/^Bearer\s+/i,'');
   try{
@@ -107,7 +131,7 @@ app.post('/api/register',async(req,res)=>{
   if(!name||!email||!password||password.length<6) return res.status(400).json({error:'Preencha os dados obrigatórios. A senha deve ter pelo menos 6 caracteres.'});
   const db=read(),e=email.trim().toLowerCase();
   if(db.users.some(u=>u.email===e)) return res.status(409).json({error:'Este e-mail já está cadastrado.'});
-  const u={id:'usr_'+Date.now(),role,name:name.trim(),email:e,passwordHash:await bcrypt.hash(password,10),status:'pending',profile,createdAt:new Date().toISOString()};
+  const u={id:'usr_'+Date.now(),role,name:name.trim(),email:e,passwordHash:await bcrypt.hash(password,10),status:'pending_email',emailVerifiedAt:null,profile,createdAt:new Date().toISOString()};
   if(role==='escola'){
     let school=null;
     if(profile.sigesSchoolId){
@@ -138,24 +162,59 @@ app.post('/api/register',async(req,res)=>{
       }
     }
     if(!school)return res.status(400).json({error:'Selecione uma escola válida no SIGES.'});
-    const student={id:'std_'+Date.now(),userId:u.id,name:name.trim(),birthDate:String(profile.birthDate||''),schoolId:school.id,grade:String(profile.grade||'').trim(),className:String(profile.className||'').trim(),shift:String(profile.shift||'').trim(),responsibleName:String(profile.responsibleName||'').trim(),responsibleContact:String(profile.responsibleContact||'').trim(),status:'active',isGuide:role==='aluno_guia',guideCertified:false,createdAt:new Date().toISOString(),createdBy:u.id};
+    const student={id:'std_'+Date.now(),userId:u.id,name:name.trim(),birthDate:String(profile.birthDate||''),schoolId:school.id,grade:String(profile.grade||'').trim(),className:String(profile.className||'').trim(),shift:String(profile.shift||'').trim(),responsibleName:String(profile.responsibleName||'').trim(),responsibleContact:String(profile.responsibleContact||'').trim(),status:'pending',isGuide:role==='aluno_guia',guideCertified:false,createdAt:new Date().toISOString(),createdBy:u.id};
     if(!student.birthDate||!student.grade||!student.className)return res.status(400).json({error:'Data de nascimento, série/etapa e turma são obrigatórios.'});
     db.students.push(student);u.profile={...profile,schoolId:school.id,studentId:student.id};
   }
-  db.users.push(u);audit(db,'REGISTER',u.id,{role});write(db);
-  res.status(201).json({message:'Cadastro criado e aguardando validação.',user:safe(u)});
+  db.users.push(u);
+  const verificationToken=createEmailVerification(db,u);
+  audit(db,'REGISTER',u.id,{role,emailVerificationPending:true});
+  write(db);
+  const mail=await sendVerificationEmail(u,verificationToken);
+  res.status(201).json({message:mail.configured?'Cadastro criado. Enviamos um e-mail para confirmar seu endereço.':'Cadastro criado. O e-mail de confirmação será enviado assim que o serviço de e-mail estiver configurado.',emailVerificationSent:mail.ok,user:safe(u)});
+
 });
 
 app.post('/api/login',async(req,res)=>{
   const identifier=String(req.body.email||req.body.identifier||'').trim().toLowerCase(),password=String(req.body.password||'');
   const db=read(),u=db.users.find(x=>x.email===identifier || x.username===identifier);
   if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'E-mail ou senha inválidos.'});
-  if(u.status!=='active') return res.status(403).json({error:'Esta conta ainda aguarda validação.'});
+  if(u.status!=='active'){
+    const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu e-mail foi confirmado. O vínculo escolar ainda aguarda validação.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
+    return res.status(403).json({code:u.status,error:messages[u.status]||'Esta conta ainda aguarda validação.',emailVerified:Boolean(u.emailVerifiedAt)});
+  }
   audit(db,'LOGIN',u.id,{role:u.role});write(db);
   res.json({token:token(u),user:safe(u)});
 });
 
 app.get('/api/me',auth,(req,res)=>res.json({user:safe(req.user)}));
+
+app.get('/api/verify-email',async(req,res)=>{
+  const raw=String(req.query.token||'');
+  if(!raw)return res.status(400).json({error:'Link de confirmação inválido.'});
+  const db=read(),hash=crypto.createHash('sha256').update(raw).digest('hex');
+  const item=db.emailVerifications.find(x=>x.tokenHash===hash&&x.expiresAt>Date.now());
+  if(!item)return res.status(400).json({error:'Este link é inválido ou expirou. Solicite um novo e-mail de confirmação.'});
+  const u=db.users.find(x=>x.id===item.userId);
+  if(!u)return res.status(404).json({error:'Conta não localizada.'});
+  u.emailVerifiedAt=new Date().toISOString();
+  if(u.role==='escola')u.status='pending_admin';
+  else if(['aluno','aluno_guia'].includes(u.role))u.status='pending_school';
+  else u.status='active';
+  db.emailVerifications=db.emailVerifications.filter(x=>x.id!==item.id);
+  audit(db,'EMAIL_VERIFIED',u.id,{role:u.role});
+  write(db);
+  res.json({ok:true,status:u.status,message:u.role==='escola'?'E-mail confirmado. Seu cadastro aguarda validação administrativa.':'E-mail confirmado. Seu vínculo escolar aguarda validação da escola ou da Administração SIGES.'});
+});
+app.post('/api/resend-verification',async(req,res)=>{
+  const email=String(req.body.email||'').trim().toLowerCase();
+  const db=read(),u=db.users.find(x=>x.email===email);
+  if(!u)return res.json({message:'Se o cadastro existir, enviaremos uma nova confirmação.'});
+  if(u.emailVerifiedAt)return res.json({message:'Este e-mail já foi confirmado.'});
+  const raw=createEmailVerification(db,u);write(db);
+  const mail=await sendVerificationEmail(u,raw);
+  res.json({message:mail.ok?'Nova confirmação enviada.':'Não foi possível enviar agora. Tente novamente mais tarde.',sent:mail.ok});
+});
 
 app.get('/api/settings',auth,(req,res)=>{
   if(req.user.role!=='enat') return res.status(403).json({error:'Acesso restrito à Administração ENAT.'});
@@ -184,6 +243,39 @@ app.post('/api/admin/change-password',async(req,res)=>{
   res.json({message:'Senha administrativa alterada com sucesso.'});
 });
 
+app.get('/api/admin/access-requests',auth,(req,res)=>{
+  if(req.user.role!=='enat')return res.status(403).json({error:'Acesso restrito à Administração ENAT.'});
+  const db=read();
+  const rows=db.users.filter(u=>['pending_email','pending_school','pending_admin'].includes(u.status)).map(u=>{
+    const school=u.profile?.schoolId?db.schools.find(s=>s.id===u.profile.schoolId):null;
+    const student=u.profile?.studentId?db.students.find(s=>s.id===u.profile.studentId):null;
+    return {id:u.id,role:u.role,name:u.name,email:u.email,status:u.status,emailVerified:Boolean(u.emailVerifiedAt),createdAt:u.createdAt,school:school?{id:school.id,name:school.name,status:school.status}:null,student:student?{id:student.id,name:student.name,status:student.status,grade:student.grade,className:student.className}:null};
+  });
+  res.json({requests:rows});
+});
+app.post('/api/admin/access-requests/:id/decision',auth,(req,res)=>{
+  if(req.user.role!=='enat')return res.status(403).json({error:'Acesso restrito à Administração ENAT.'});
+  const db=read(),u=db.users.find(x=>x.id===req.params.id);
+  if(!u)return res.status(404).json({error:'Solicitação não encontrada.'});
+  const decision=req.body?.decision;
+  if(!['approve','reject'].includes(decision))return res.status(400).json({error:'Decisão inválida.'});
+  if(decision==='reject'){u.status='rejected';u.validationNotes=String(req.body?.notes||'').trim();u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();audit(db,'ACCESS_REJECTED',req.user.id,{targetUserId:u.id,role:u.role});write(db);return res.json({user:safe(u)});}
+  if(!u.emailVerifiedAt)return res.status(400).json({error:'O e-mail do usuário ainda não foi confirmado.'});
+  if(u.role==='escola'){
+    const school=db.schools.find(s=>s.id===u.profile?.schoolId);
+    if(!school)return res.status(400).json({error:'Unidade escolar não localizada.'});
+    school.status='active';school.validatedBy=req.user.id;school.validatedAt=new Date().toISOString();
+  }
+  if(['aluno','aluno_guia'].includes(u.role)){
+    const student=db.students.find(s=>s.id===u.profile?.studentId);
+    if(!student)return res.status(400).json({error:'Registro escolar do aluno não localizado.'});
+    student.status='active';student.schoolValidatedAt=new Date().toISOString();student.validatedBy=req.user.id;
+  }
+  u.status='active';u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();
+  audit(db,'ACCESS_APPROVED',req.user.id,{targetUserId:u.id,role:u.role});
+  write(db);
+  res.json({user:safe(u)});
+});
 app.get('/api/admin/users',auth,(req,res)=>{
   if(req.user.role!=='enat') return res.status(403).json({error:'Acesso restrito à Administração ENAT.'});
   const db=read();
@@ -397,7 +489,20 @@ app.post('/api/student/observations',auth,(req,res)=>{if(!canAccessStudent(req.u
 app.post('/api/student/claims',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Aluno não localizado.'});const {category,title,description,location}=req.body||{};if(!category||!title||!description)return res.status(400).json({error:'Preencha categoria, título e descrição.'});const item={id:'clm_'+Date.now(),studentId:student.id,schoolId:student.schoolId,category:String(category).trim(),title:String(title).trim(),description:String(description).trim(),location:String(location||'').trim(),status:'pending',source:'student',createdAt:new Date().toISOString()};db.claims.push(item);audit(db,'STUDENT_CLAIM_CREATED',req.user.id,{claimId:item.id,category:item.category});write(db);res.status(201).json({claim:item});});
 app.post('/api/student/progress',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();ensureStudentCollections(db);const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Aluno não localizado.'});const {courseId,lessonId,completed=true}=req.body||{};if(!courseId||!lessonId)return res.status(400).json({error:'Curso e aula são obrigatórios.'});let p=db.studentProgress.find(x=>x.studentId===student.id&&x.courseId===courseId&&x.lessonId===lessonId);if(!p){p={id:'prog_'+Date.now(),studentId:student.id,courseId,lessonId,completed:Boolean(completed),completedAt:completed?new Date().toISOString():null};db.studentProgress.push(p);}else{p.completed=Boolean(completed);p.completedAt=p.completed?new Date().toISOString():null;}audit(db,'STUDENT_LESSON_PROGRESS',req.user.id,{courseId,lessonId,completed:p.completed});write(db);res.json({progress:p});});
 app.get('/api/school/dashboard',auth,(req,res)=>{if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});const db=read();ensureStudentCollections(db);const school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada ao usuário.'});const students=db.students.filter(s=>s.schoolId===school.id);const ids=new Set(students.map(s=>s.id));const progress=db.studentProgress.filter(x=>ids.has(x.studentId));const claims=db.claims.filter(x=>ids.has(x.studentId));const observations=db.observations.filter(x=>ids.has(x.studentId));const guide=db.guideTrainings.filter(x=>ids.has(x.studentId));const byStudent=students.map(s=>({id:s.id,name:s.name,grade:s.grade,className:s.className,lessons:progress.filter(p=>p.studentId===s.id&&p.completed).length,claims:claims.filter(c=>c.studentId===s.id).length,observations:observations.filter(o=>o.studentId===s.id).length,guideProgress:guide.find(g=>g.studentId===s.id)?.progress||0}));res.json({school,students:byStudent,claims,observations,siges:schoolSigesContext(db,school),summary:{students:students.length,lessonsCompleted:progress.filter(x=>x.completed).length,claims:claims.length,observations:observations.length,guides:guide.length}});});
-app.get('/api/school/students',auth,(req,res)=>{if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});const db=read(),school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada.'});const students=db.students.filter(s=>s.schoolId===school.id);res.json({students:students.map(s=>({...s,responsibleName:undefined,responsibleContact:undefined}))});});
+app.post('/api/school/students/:id/decision',auth,(req,res)=>{
+  if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});
+  const db=read(),student=db.students.find(s=>s.id===req.params.id),school=schoolForUser(db,req.user);
+  if(!student||!school||student.schoolId!==school.id)return res.status(404).json({error:'Aluno não localizado nesta escola.'});
+  const decision=req.body?.decision;
+  if(!['approve','reject'].includes(decision))return res.status(400).json({error:'Decisão inválida.'});
+  const u=db.users.find(x=>x.id===student.userId);
+  if(decision==='reject'){student.status='rejected';if(u){u.status='rejected';u.validationNotes=String(req.body?.notes||'').trim();}audit(db,'SCHOOL_STUDENT_REJECTED',req.user.id,{studentId:student.id});write(db);return res.json({student});}
+  if(!u?.emailVerifiedAt)return res.status(400).json({error:'O aluno ainda não confirmou o e-mail.'});
+  student.status='active';student.schoolValidatedAt=new Date().toISOString();student.validatedBy=req.user.id;
+  if(u){u.status='active';u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();}
+  audit(db,'SCHOOL_STUDENT_APPROVED',req.user.id,{studentId:student.id});write(db);res.json({student});
+});
+app.get('/api/school/students',auth,(req,res)=>{if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});const db=read(),school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada.'});const students=db.students.filter(s=>s.schoolId===school.id);res.json({students:students.map(s=>({...s,responsibleName:undefined,responsibleContact:undefined,status:s.status}))});});
 app.post('/api/forgot',(req,res)=>{const email=String(req.body.email||'').trim().toLowerCase(),db=read(),u=db.users.find(x=>x.email===email);if(!u)return res.json({message:'Se a conta existir, a recuperação será processada.'});const t='reset_'+Date.now()+'_'+Math.random().toString(36).slice(2);db.passwordResets.push({token:t,userId:u.id,expiresAt:Date.now()+1800000});audit(db,'PASSWORD_RESET_REQUEST',u.id);write(db);res.json({message:'Solicitação registrada.',devToken:t});});
 app.post('/api/reset',async(req,res)=>{const{token,password}=req.body;if(!token||!password||password.length<6)return res.status(400).json({error:'Token e nova senha são obrigatórios.'});const db=read(),r=db.passwordResets.find(x=>x.token===token&&x.expiresAt>Date.now());if(!r)return res.status(400).json({error:'Token inválido ou expirado.'});const u=db.users.find(x=>x.id===r.userId);u.passwordHash=await bcrypt.hash(password,10);db.passwordResets=db.passwordResets.filter(x=>x.token!==token);audit(db,'PASSWORD_RESET',u.id);write(db);res.json({message:'Senha redefinida com sucesso.'});});
 
