@@ -61,6 +61,8 @@ function auth(req,res,next){
 app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));
 app.use('/api/public-sources',buildPublicSourcesRouter());
 
+app.get('/api/public-schools',(req,res)=>{const db=read();res.json({schools:db.schools.filter(s=>s.status!=='inactive').map(s=>({id:s.id,name:s.name,municipality:s.municipality,uf:s.uf,bairro:s.bairro}))});});
+
 app.post('/api/register',async(req,res)=>{
   const {role,name,email,password,profile={}}=req.body;
   const allowed=['aluno','aluno_guia','instrutor','escola','auditor','transito','educacao','prefeitura'];
