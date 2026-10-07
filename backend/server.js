@@ -97,7 +97,7 @@ app.get('/api/public-schools',(req,res)=>{
   const db=read(),q=normTerritory(req.query.q||'');
   let schools=sigesSchoolCatalog(db);
   if(q) schools=schools.filter(s=>normTerritory([s.name,s.bairro,s.address,s.municipality].join(' ')).includes(q));
-  res.json({schools:schools.slice(0,200),source:'SIGES — Matriz Territorial 3.2'});
+  res.json({schools:schools.slice(0,1000),source:'SIGES — Matriz Territorial 3.2'});
 });
 
 app.post('/api/register',async(req,res)=>{
