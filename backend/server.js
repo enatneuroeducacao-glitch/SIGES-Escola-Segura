@@ -7,7 +7,7 @@ const jwt=require('jsonwebtoken');
 const buildPublicSourcesRouter=require('./public-sources');
 
 const app=express();
-const PORT=3001;
+const PORT=Number(process.env.PORT)||3001;
 const SECRET=process.env.SIGES_SECRET||'SIGES_LOCAL_ONLY_CHANGE_BEFORE_PRODUCTION';
 const DB=path.join(__dirname,'data','db.json');
 
@@ -259,4 +259,4 @@ app.get('/api/school/students',auth,(req,res)=>{if(req.user.role!=='escola')retu
 \napp.post('/api/forgot',(req,res)=>{const email=String(req.body.email||'').trim().toLowerCase(),db=read(),u=db.users.find(x=>x.email===email);if(!u)return res.json({message:'Se a conta existir, a recuperação será processada.'});const t='reset_'+Date.now()+'_'+Math.random().toString(36).slice(2);db.passwordResets.push({token:t,userId:u.id,expiresAt:Date.now()+1800000});audit(db,'PASSWORD_RESET_REQUEST',u.id);write(db);res.json({message:'Solicitação registrada.',devToken:t});});
 app.post('/api/reset',async(req,res)=>{const{token,password}=req.body;if(!token||!password||password.length<6)return res.status(400).json({error:'Token e nova senha são obrigatórios.'});const db=read(),r=db.passwordResets.find(x=>x.token===token&&x.expiresAt>Date.now());if(!r)return res.status(400).json({error:'Token inválido ou expirado.'});const u=db.users.find(x=>x.id===r.userId);u.passwordHash=await bcrypt.hash(password,10);db.passwordResets=db.passwordResets.filter(x=>x.token!==token);audit(db,'PASSWORD_RESET',u.id);write(db);res.json({message:'Senha redefinida com sucesso.'});});
 
-app.listen(PORT,()=>{ensureAdmin();console.log('SIGES API local: http://localhost:'+PORT);});
+app.listen(PORT,'0.0.0.0',()=>{ensureAdmin();console.log('SIGES API local: http://localhost:'+PORT);});
