@@ -253,7 +253,7 @@ app.get('/api/admin/access-requests',auth,(req,res)=>{
   });
   res.json({requests:rows});
 });
-app.post('/api/admin/access-requests/:id/decision',auth,(req,res)=>{
+app.post('/api/admin/access-requests/:id/decision',auth,async(req,res)=>{
   if(req.user.role!=='enat')return res.status(403).json({error:'Acesso restrito à Administração ENAT.'});
   const db=read(),u=db.users.find(x=>x.id===req.params.id);
   if(!u)return res.status(404).json({error:'Solicitação não encontrada.'});
@@ -274,6 +274,7 @@ app.post('/api/admin/access-requests/:id/decision',auth,(req,res)=>{
   u.status='active';u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();
   audit(db,'ACCESS_APPROVED',req.user.id,{targetUserId:u.id,role:u.role});
   write(db);
+  await sendEmail({to:u.email,subject:'Acesso liberado — Escola Segura do Aluno',html:`<div style="font-family:Arial,sans-serif;max-width:620px;margin:auto;padding:28px;color:#18324a"><h2>🛡️ Acesso liberado</h2><p>Olá, <b>${u.name}</b>.</p><p>Seu cadastro foi validado pela Administração SIGES e seu acesso à Escola Segura está liberado.</p><p><a href="${APP_URL}/${u.role==='escola'?'escola':'aluno'}">Acessar a plataforma</a></p></div>`});
   res.json({user:safe(u)});
 });
 app.get('/api/admin/users',auth,(req,res)=>{
@@ -489,18 +490,18 @@ app.post('/api/student/observations',auth,(req,res)=>{if(!canAccessStudent(req.u
 app.post('/api/student/claims',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Aluno não localizado.'});const {category,title,description,location}=req.body||{};if(!category||!title||!description)return res.status(400).json({error:'Preencha categoria, título e descrição.'});const item={id:'clm_'+Date.now(),studentId:student.id,schoolId:student.schoolId,category:String(category).trim(),title:String(title).trim(),description:String(description).trim(),location:String(location||'').trim(),status:'pending',source:'student',createdAt:new Date().toISOString()};db.claims.push(item);audit(db,'STUDENT_CLAIM_CREATED',req.user.id,{claimId:item.id,category:item.category});write(db);res.status(201).json({claim:item});});
 app.post('/api/student/progress',auth,(req,res)=>{if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});const db=read();ensureStudentCollections(db);const student=studentForUser(db,req.user);if(!student)return res.status(404).json({error:'Aluno não localizado.'});const {courseId,lessonId,completed=true}=req.body||{};if(!courseId||!lessonId)return res.status(400).json({error:'Curso e aula são obrigatórios.'});let p=db.studentProgress.find(x=>x.studentId===student.id&&x.courseId===courseId&&x.lessonId===lessonId);if(!p){p={id:'prog_'+Date.now(),studentId:student.id,courseId,lessonId,completed:Boolean(completed),completedAt:completed?new Date().toISOString():null};db.studentProgress.push(p);}else{p.completed=Boolean(completed);p.completedAt=p.completed?new Date().toISOString():null;}audit(db,'STUDENT_LESSON_PROGRESS',req.user.id,{courseId,lessonId,completed:p.completed});write(db);res.json({progress:p});});
 app.get('/api/school/dashboard',auth,(req,res)=>{if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});const db=read();ensureStudentCollections(db);const school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada ao usuário.'});const students=db.students.filter(s=>s.schoolId===school.id);const ids=new Set(students.map(s=>s.id));const progress=db.studentProgress.filter(x=>ids.has(x.studentId));const claims=db.claims.filter(x=>ids.has(x.studentId));const observations=db.observations.filter(x=>ids.has(x.studentId));const guide=db.guideTrainings.filter(x=>ids.has(x.studentId));const byStudent=students.map(s=>({id:s.id,name:s.name,grade:s.grade,className:s.className,lessons:progress.filter(p=>p.studentId===s.id&&p.completed).length,claims:claims.filter(c=>c.studentId===s.id).length,observations:observations.filter(o=>o.studentId===s.id).length,guideProgress:guide.find(g=>g.studentId===s.id)?.progress||0}));res.json({school,students:byStudent,claims,observations,siges:schoolSigesContext(db,school),summary:{students:students.length,lessonsCompleted:progress.filter(x=>x.completed).length,claims:claims.length,observations:observations.length,guides:guide.length}});});
-app.post('/api/school/students/:id/decision',auth,(req,res)=>{
+app.post('/api/school/students/:id/decision',auth,async(req,res)=>{
   if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});
   const db=read(),student=db.students.find(s=>s.id===req.params.id),school=schoolForUser(db,req.user);
   if(!student||!school||student.schoolId!==school.id)return res.status(404).json({error:'Aluno não localizado nesta escola.'});
   const decision=req.body?.decision;
   if(!['approve','reject'].includes(decision))return res.status(400).json({error:'Decisão inválida.'});
   const u=db.users.find(x=>x.id===student.userId);
-  if(decision==='reject'){student.status='rejected';if(u){u.status='rejected';u.validationNotes=String(req.body?.notes||'').trim();}audit(db,'SCHOOL_STUDENT_REJECTED',req.user.id,{studentId:student.id});write(db);return res.json({student});}
+  if(decision==='reject'){student.status='rejected';if(u){u.status='rejected';u.validationNotes=String(req.body?.notes||'').trim();}audit(db,'SCHOOL_STUDENT_REJECTED',req.user.id,{studentId:student.id});write(db);if(u)await sendEmail({to:u.email,subject:'Vínculo escolar não confirmado — Escola Segura',html:`<p>Olá, <b>${u.name}</b>.</p><p>A escola informou que o vínculo escolar não pôde ser confirmado neste momento.</p><p>${u.validationNotes||'Entre em contato com a escola ou com o suporte.'}</p>`});return res.json({student});}
   if(!u?.emailVerifiedAt)return res.status(400).json({error:'O aluno ainda não confirmou o e-mail.'});
   student.status='active';student.schoolValidatedAt=new Date().toISOString();student.validatedBy=req.user.id;
   if(u){u.status='active';u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();}
-  audit(db,'SCHOOL_STUDENT_APPROVED',req.user.id,{studentId:student.id});write(db);res.json({student});
+  audit(db,'SCHOOL_STUDENT_APPROVED',req.user.id,{studentId:student.id});write(db);if(u)await sendEmail({to:u.email,subject:'Vínculo escolar confirmado — Escola Segura',html:`<div style="font-family:Arial,sans-serif;padding:28px;color:#18324a"><h2>🛡️ Vínculo confirmado</h2><p>Olá, <b>${u.name}</b>.</p><p>A escola confirmou seu vínculo. Seu acesso à Escola Segura está liberado.</p><p><a href="${APP_URL}/aluno">Acessar a área do aluno</a></p></div>`});res.json({student});
 });
 app.get('/api/school/students',auth,(req,res)=>{if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});const db=read(),school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada.'});const students=db.students.filter(s=>s.schoolId===school.id);res.json({students:students.map(s=>({...s,responsibleName:undefined,responsibleContact:undefined,status:s.status}))});});
 app.post('/api/forgot',(req,res)=>{const email=String(req.body.email||'').trim().toLowerCase(),db=read(),u=db.users.find(x=>x.email===email);if(!u)return res.json({message:'Se a conta existir, a recuperação será processada.'});const t='reset_'+Date.now()+'_'+Math.random().toString(36).slice(2);db.passwordResets.push({token:t,userId:u.id,expiresAt:Date.now()+1800000});audit(db,'PASSWORD_RESET_REQUEST',u.id);write(db);res.json({message:'Solicitação registrada.',devToken:t});});
