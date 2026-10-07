@@ -180,7 +180,7 @@ app.post('/api/login',async(req,res)=>{
   const db=read(),u=db.users.find(x=>x.email===identifier || x.username===identifier);
   if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'E-mail ou senha inválidos.'});
   if(u.status!=='active'){
-    const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu e-mail foi confirmado. O vínculo escolar ainda aguarda validação.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
+    const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu e-mail foi confirmado. O vínculo escolar ainda aguarda validação.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
     return res.status(403).json({code:u.status,error:messages[u.status]||'Esta conta ainda aguarda validação.',emailVerified:Boolean(u.emailVerifiedAt)});
   }
   audit(db,'LOGIN',u.id,{role:u.role});write(db);
@@ -246,7 +246,7 @@ app.post('/api/admin/change-password',async(req,res)=>{
 app.get('/api/admin/access-requests',auth,(req,res)=>{
   if(req.user.role!=='enat')return res.status(403).json({error:'Acesso restrito à Administração ENAT.'});
   const db=read();
-  const rows=db.users.filter(u=>['pending_email','pending_school','pending_admin'].includes(u.status)).map(u=>{
+  const rows=db.users.filter(u=>['pending_email','pending_school','pending_admin','pending'].includes(u.status)).map(u=>{
     const school=u.profile?.schoolId?db.schools.find(s=>s.id===u.profile.schoolId):null;
     const student=u.profile?.studentId?db.students.find(s=>s.id===u.profile.studentId):null;
     return {id:u.id,role:u.role,name:u.name,email:u.email,status:u.status,emailVerified:Boolean(u.emailVerifiedAt),createdAt:u.createdAt,school:school?{id:school.id,name:school.name,status:school.status}:null,student:student?{id:student.id,name:student.name,status:student.status,grade:student.grade,className:student.className}:null};
@@ -259,7 +259,7 @@ app.post('/api/admin/access-requests/:id/decision',auth,async(req,res)=>{
   if(!u)return res.status(404).json({error:'Solicitação não encontrada.'});
   const decision=req.body?.decision;
   if(!['approve','reject'].includes(decision))return res.status(400).json({error:'Decisão inválida.'});
-  if(decision==='reject'){u.status='rejected';u.validationNotes=String(req.body?.notes||'').trim();u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();audit(db,'ACCESS_REJECTED',req.user.id,{targetUserId:u.id,role:u.role});write(db);return res.json({user:safe(u)});}
+  if(decision==='reject'){u.status='rejected';u.validationNotes=String(req.body?.notes||'').trim();u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();audit(db,'ACCESS_REJECTED',req.user.id,{targetUserId:u.id,role:u.role});write(db);await sendEmail({to:u.email,subject:'Atualização do cadastro — Escola Segura',html:`<p>Olá, <b>${u.name}</b>.</p><p>Seu cadastro na Escola Segura não foi aprovado neste momento.</p><p>${u.validationNotes||'Entre em contato com o suporte para orientações.'}</p>`});return res.json({user:safe(u)});}
   if(!u.emailVerifiedAt)return res.status(400).json({error:'O e-mail do usuário ainda não foi confirmado.'});
   if(u.role==='escola'){
     const school=db.schools.find(s=>s.id===u.profile?.schoolId);
