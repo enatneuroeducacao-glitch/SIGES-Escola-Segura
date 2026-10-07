@@ -299,6 +299,9 @@ function schoolSigesContext(db,school){
   const data=readSigesTerritory(),match=matchTerritorialSchool(school,data);
   if(!match)return {available:false,source:'SIGES — Matriz Territorial 3.2'};
   const x=match.row;
+  const risks=db.risks.filter(r=>r.schoolId===school.id&&r.status!=='closed');
+  const evidencesDb=db.evidences.filter(e=>e.schoolId===school.id);
+  const plans=db.actionPlans.filter(p=>p.schoolId===school.id&&p.status!=='completed');
   return {
     available:true,source:'SIGES — Matriz Territorial 3.2',schoolId:school.id,
     territorial:{
@@ -311,6 +314,7 @@ function schoolSigesContext(db,school){
       cycling:x['Infraestrutura cicloviária']??null
     },
     evidences:match.evidencias.map(e=>({tipo:e.Tipo,ponto:e.Ponto,natureza:e.Natureza,result:e['Valor/resultado'],year:e['Data/ano'],source:e['Fonte oficial']})),
+    operational:{openRisks:risks.length,evidences:evidencesDb.length,openActionPlans:plans.length},
     corridors:match.sinistros.map(x=>({via:x.Via||x.Corredor,accidents2024:x['Acidentes 2024'],accidents2025:x['Acidentes 2025'],variation:x['Variação 2024-2025']}))
   };
 }
