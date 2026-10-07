@@ -70,7 +70,35 @@ function auth(req,res,next){
 app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));
 app.use('/api/public-sources',buildPublicSourcesRouter());
 
-app.get('/api/public-schools',(req,res)=>{const db=read();res.json({schools:db.schools.filter(s=>s.status==='active').map(s=>({id:s.id,name:s.name,municipality:s.municipality,uf:s.uf,bairro:s.bairro}))});});
+function stableSchoolId(name,address){
+  const raw=normTerritory(String(name||'')+'|'+String(address||''));
+  let h=2166136261;
+  for(let i=0;i<raw.length;i++){h^=raw.charCodeAt(i);h=Math.imul(h,16777619);}
+  return 'siges_'+(h>>>0).toString(36);
+}
+function sigesSchoolCatalog(db){
+  const data=readSigesTerritory();
+  if(!data?.matrix?.length) return db.schools.filter(s=>s.status==='active').map(s=>({id:s.id,name:s.name,municipality:s.municipality,uf:s.uf,bairro:s.bairro,address:s.address||'',category:s.category||'',source:'SIGES'}));
+  const seen=new Map();
+  for(const x of data.matrix){
+    const name=String(x.Unidade||'').trim(),address=String(x['Endereço']||'').trim();
+    if(!name) continue;
+    const id=stableSchoolId(name,address);
+    if(!seen.has(id)) seen.set(id,{id,name,municipality:'Joinville',uf:'SC',bairro:String(x.Bairro||'').trim(),address,category:String(x.Categoria||x.categoria||'').trim(),source:'SIGES',registered:false,status:'catalog'});
+  }
+  const catalog=[...seen.values()];
+  for(const item of catalog){
+    const existing=db.schools.find(s=>s.sigesId===item.id || (normTerritory(s.name)===normTerritory(item.name)&&normTerritory(s.address)===normTerritory(item.address)));
+    if(existing){item.id=existing.id;item.registered=true;item.status=existing.status;item.category=existing.category||item.category;}
+  }
+  return catalog.sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+}
+app.get('/api/public-schools',(req,res)=>{
+  const db=read(),q=normTerritory(req.query.q||'');
+  let schools=sigesSchoolCatalog(db);
+  if(q) schools=schools.filter(s=>normTerritory([s.name,s.bairro,s.address,s.municipality].join(' ')).includes(q));
+  res.json({schools:schools.slice(0,200),source:'SIGES — Matriz Territorial 3.2'});
+});
 
 app.post('/api/register',async(req,res)=>{
   const {role,name,email,password,profile={}}=req.body;
@@ -81,12 +109,35 @@ app.post('/api/register',async(req,res)=>{
   if(db.users.some(u=>u.email===e)) return res.status(409).json({error:'Este e-mail já está cadastrado.'});
   const u={id:'usr_'+Date.now(),role,name:name.trim(),email:e,passwordHash:await bcrypt.hash(password,10),status:'pending',profile,createdAt:new Date().toISOString()};
   if(role==='escola'){
-    const school={id:'sch_'+Date.now(),name:String(profile.schoolName||name+' — Escola').trim(),inep:String(profile.inep||'').trim(),municipality:String(profile.municipality||'').trim(),uf:String(profile.uf||'').trim().toUpperCase(),bairro:String(profile.bairro||'').trim(),address:String(profile.address||'').trim(),managerName:name.trim(),managerEmail:e,managerUserId:u.id,status:'pending',createdAt:new Date().toISOString(),createdBy:u.id};
-    db.schools.push(school);u.profile={...profile,schoolId:school.id};
+    let school=null;
+    if(profile.sigesSchoolId){
+      const catalog=sigesSchoolCatalog(db);
+      const selected=catalog.find(x=>x.id===profile.sigesSchoolId || x.sigesId===profile.sigesSchoolId);
+      if(!selected)return res.status(400).json({error:'Selecione uma escola válida no SIGES.'});
+      school=db.schools.find(x=>x.id===selected.id);
+      if(!school){
+        school={id:'sch_'+Date.now(),sigesId:profile.sigesSchoolId,name:selected.name,inep:String(profile.inep||'').trim(),municipality:selected.municipality,uf:selected.uf,bairro:selected.bairro,address:selected.address,category:selected.category||'',source:'SIGES',managerName:name.trim(),managerEmail:e,managerUserId:u.id,status:'pending',createdAt:new Date().toISOString(),createdBy:u.id};
+        db.schools.push(school);
+      }else{
+        school.managerName=name.trim();school.managerEmail=e;school.managerUserId=u.id;school.status='pending';
+      }
+    }else{
+      school={id:'sch_'+Date.now(),name:String(profile.schoolName||name+' — Escola').trim(),inep:String(profile.inep||'').trim(),municipality:String(profile.municipality||'').trim(),uf:String(profile.uf||'').trim().toUpperCase(),bairro:String(profile.bairro||'').trim(),address:String(profile.address||'').trim(),managerName:name.trim(),managerEmail:e,managerUserId:u.id,status:'pending',createdAt:new Date().toISOString(),createdBy:u.id};
+      db.schools.push(school);
+    }
+    u.profile={...profile,schoolId:school.id};
   }
   if(role==='aluno'||role==='aluno_guia'){
-    const school=db.schools.find(s=>s.id===profile.schoolId);
-    if(!school)return res.status(400).json({error:'Selecione uma escola válida no cadastro.'});
+    let school=db.schools.find(s=>s.id===profile.schoolId);
+    if(!school && profile.schoolId){
+      const catalog=sigesSchoolCatalog(db);
+      const selected=catalog.find(x=>x.id===profile.schoolId);
+      if(selected){
+        school={id:'sch_'+Date.now(),sigesId:selected.id,name:selected.name,inep:'',municipality:selected.municipality,uf:selected.uf,bairro:selected.bairro,address:selected.address,category:selected.category||'',source:'SIGES',managerName:'',managerEmail:'',managerUserId:null,status:'active',createdAt:new Date().toISOString(),createdBy:'SIGES'};
+        db.schools.push(school);
+      }
+    }
+    if(!school)return res.status(400).json({error:'Selecione uma escola válida no SIGES.'});
     const student={id:'std_'+Date.now(),userId:u.id,name:name.trim(),birthDate:String(profile.birthDate||''),schoolId:school.id,grade:String(profile.grade||'').trim(),className:String(profile.className||'').trim(),shift:String(profile.shift||'').trim(),responsibleName:String(profile.responsibleName||'').trim(),responsibleContact:String(profile.responsibleContact||'').trim(),status:'active',isGuide:role==='aluno_guia',guideCertified:false,createdAt:new Date().toISOString(),createdBy:u.id};
     if(!student.birthDate||!student.grade||!student.className)return res.status(400).json({error:'Data de nascimento, série/etapa e turma são obrigatórios.'});
     db.students.push(student);u.profile={...profile,schoolId:school.id,studentId:student.id};
