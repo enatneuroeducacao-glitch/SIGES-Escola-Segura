@@ -157,7 +157,7 @@ app.post('/api/register',async(req,res)=>{
       const catalog=sigesSchoolCatalog(db);
       const selected=catalog.find(x=>x.id===profile.schoolId);
       if(selected){
-        school={id:'sch_'+Date.now(),sigesId:selected.id,name:selected.name,inep:'',municipality:selected.municipality,uf:selected.uf,bairro:selected.bairro,address:selected.address,category:selected.category||'',source:'SIGES',managerName:'',managerEmail:'',managerUserId:null,status:'active',createdAt:new Date().toISOString(),createdBy:'SIGES'};
+        school={id:'sch_'+Date.now(),sigesId:selected.id,name:selected.name,inep:'',municipality:selected.municipality,uf:selected.uf,bairro:selected.bairro,address:selected.address,category:selected.category||'',source:'SIGES',managerName:'',managerEmail:'',managerUserId:null,status:'pending',createdAt:new Date().toISOString(),createdBy:'SIGES'};
         db.schools.push(school);
       }
     }
