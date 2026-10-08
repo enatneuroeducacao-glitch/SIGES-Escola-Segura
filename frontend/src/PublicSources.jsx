@@ -12,6 +12,8 @@ function printTable(title, subtitle, headers, rows) {
   win.document.close();
 }
 
+const API_BASE = (import.meta.env.VITE_API_BASE || 'https://escola-segura-api-r51o.onrender.com/api').replace(/\/$/, '');
+
 const SOURCE_URLS = {
   cbvj: 'https://www.cbvj.org.br/blog/bombeiros-voluntarios-de-joinville-atenderam-14-574-ocorrencias-em-2025/',
   detrans: 'https://www.joinville.sc.gov.br/publicacoes/estudos-tecnicos-equipamentos-de-fiscalizacao-eletronica-radares-e-lombadas/',
@@ -39,9 +41,9 @@ export default function PublicSources() {
     setLoading(true); setError('');
     try {
       const apiSource = source === 'detransSpatial' ? 'detrans-correlations' : source;
-      const response = await fetch(`/api/public-sources/${apiSource}`, { cache: 'no-store' });
+      const response = await fetch(`${API_BASE}/public-sources/${apiSource}?refresh=1`, { cache: 'no-store' });
       const contentType = response.headers.get('content-type') || '';
-      if (!contentType.includes('application/json')) throw new Error('A rota da fonte não retornou JSON. O conector Vercel ainda não está disponível nesta implantação.');
+      if (!contentType.includes('application/json')) throw new Error('A API de fontes públicas não retornou JSON. Verifique a conexão com a API do SIGES.');
       const json = await response.json();
       if (!response.ok) throw new Error(json.error || 'Falha na fonte pública');
       setData(json);
@@ -95,7 +97,7 @@ export default function PublicSources() {
 
     {data && tab === 'detransSpatial' && <div className="panel"><div className="section-head"><div><small>DETRANS ↔ SIMGeo</small><h3>Correspondência espacial</h3><p>Conector ativo. A classificação escola-estudo só é preenchida quando houver geometria confiável.</p></div><LocateFixed size={22} /></div><div className="source-meta"><div><small>ESTUDOS DETRANS</small><strong>{fmt(data.summary?.detransStudies)}</strong></div><div><small>UNIDADES SIMGEO</small><strong>{fmt(data.summary?.simgeoSchoolUnits)}</strong></div></div><div className="source-note"><b>{data.note}</b></div><div className="table-wrap"><table><thead><tr><th>Escola</th><th>Correspondência</th><th>Distância</th><th>Estudo associado</th></tr></thead><tbody>{(data.records || []).length ? data.records.map((item) => <tr key={item.schoolId || item.school}><td><b>{item.school}</b><br /><small>{item.address}</small></td><td>{item.correspondence}</td><td>{item.distanceMeters == null ? '—' : `${item.distanceMeters} m`}</td><td>{item.studyTitle && item.studyUrl ? <a href={item.studyUrl} target="_blank" rel="noreferrer">{item.studyTitle} <ExternalLink size={11} /></a> : '—'}</td></tr>) : <tr><td colSpan="4">Conector ativo; nenhuma correspondência individual foi afirmada sem geometria confiável.</td></tr>}</tbody></table></div></div>}
 
-    {data && tab === 'simgeo' && <div className="panel"><div className="section-head"><div><small>SIMGEO</small><h3>Inventário geográfico</h3></div>{data.urls?.portal && <a href={data.urls.portal} target="_blank" rel="noreferrer">Abrir SIMGeo <ExternalLink size={14} /></a>}</div><div className="cards"><div className="metric"><small>Unidades escolares</small><strong>{fmt(data.summary?.schoolUnits)}</strong></div><div className="metric"><small>Camadas de planejamento</small><strong>{fmt(data.summary?.planningLayers)}</strong></div></div></div>}
+    {data && tab === 'simgeo' && <div className="panel"><div className="section-head"><div><small>SIMGEO</small><h3>Inventário geográfico</h3></div>{data.urls?.portal && <a href={data.urls.portal} target="_blank" rel="noreferrer">Abrir SIMGeo <ExternalLink size={14} /></a>}</div><div className="cards"><div className="metric"><small>Unidades escolares</small><strong>{fmt(data.summary?.schoolUnits)}</strong></div><div className="metric"><small>Camadas de planejamento</small><strong>{fmt(data.summary?.planningLayers)}</strong></div><div className="metric"><small>Sinistros 2025</small><strong>{fmt(data.summary?.accidents2025Count)}</strong></div></div><div className="table-wrap" style={{marginTop:16}}><table><thead><tr><th>Mês</th><th>Sinistros com vítimas</th></tr></thead><tbody>{(data.summary?.accidents2025Monthly||[]).map(item=><tr key={item.month}><td>{String(item.month).padStart(2,'0')}/2025</td><td>{fmt(item.count)}</td></tr>)}</tbody></table></div></div>}
 
     <div className="source-note"><span><b>Rastreabilidade:</b> fonte, URL oficial, data da leitura e método permanecem visíveis. “—” significa ausência de série comparável, não zero.</span></div>
   </section>;
