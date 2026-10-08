@@ -7,7 +7,8 @@ const nonEmptyRow=x=>x&&Object.values(x).some(v=>String(v??'').trim()!=='');
 const validMatrixRow=x=>nonEmptyRow(x)&&String(x.Unidade??'').trim()!=='';
 const validEvidenceRow=x=>nonEmptyRow(x);
 const validCrashRow=x=>nonEmptyRow(x)&&(String(x.Via??x.Corredor??'').trim()!=='');
-const api=async path=>{const r=await fetch(path,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json()};
+const API_BASE=(import.meta.env.VITE_API_BASE||'https://escola-segura-api-r51o.onrender.com/api').replace(/\/$/,'');
+const api=async path=>{const r=await fetch(`${API_BASE}${path}`,{cache:'no-store'});if(!r.ok)throw new Error(`HTTP ${r.status}`);return r.json()};
 const isMissing=v=>v==null||String(v).trim()===''||String(v).trim()==='—'||String(v).trim()==='-';
 const firstDefined=(...values)=>values.find(v=>!isMissing(v));
 const priorityCode=v=>String(v??'').match(/\bP[1-4]\b/)?.[0]||'';
@@ -140,16 +141,12 @@ export function classifySchool(row){
   return{status:'DECISÃO INSTITUCIONAL SOBRE ALUNO GUIA',code:'DECISAO_INSTITUCIONAL',percent:c.percent,available:c.available,total:c.total,missing:c.missing,recommendation:'A escola dispõe de evidências territoriais suficientes para decisão institucional. A adoção de Aluno Guia é facultativa e deve ser definida pela instituição, considerando seu contexto e avaliação de risco.'};
 }
 
-export async function loadSigesData(){
+export async function loadSigesData({refresh=false}={}){
   const base=await loadStatic();
-  let sources={};
-  try{
-    const snapshot=await api(`${import.meta.env.BASE_URL}public-sources.json`);
-    sources=snapshot;
-  }catch{
-    const results=await Promise.allSettled(['/api/public-sources/cbvj','/api/public-sources/detrans','/api/public-sources/simgeo'].map(api));
-    results.forEach((r,i)=>{if(r.status==='fulfilled')sources[['cbvj','detrans','simgeo'][i]]=r.value});
-  }
+  const suffix=refresh?'?refresh=1':'';
+  const results=await Promise.allSettled([api(`/public-sources/cbvj${suffix}`),api(`/public-sources/detrans${suffix}`),api(`/public-sources/simgeo${suffix}`)]);
+  const sources={};
+  results.forEach((r,i)=>{if(r.status==='fulfilled')sources[['cbvj','detrans','simgeo'][i]]=r.value});
   const data=enrich(base,sources);
   data.matrix=data.matrix.map(x=>{
     const territorial=resolveTerritorialPriority(x);
