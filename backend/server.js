@@ -68,7 +68,7 @@ function ensureAdmin(){
   }
 }
 
-app.use(cors({origin:(process.env.CORS_ORIGIN||'*'),credentials:true}));
+app.use(cors({origin:(process.env.CORS_ORIGIN||'*'),credentials:false,methods:['GET','POST','PATCH','PUT','DELETE','OPTIONS'],allowedHeaders:['Content-Type','Authorization']}));
 app.use(express.json());
 
 function defaultSettings(){
