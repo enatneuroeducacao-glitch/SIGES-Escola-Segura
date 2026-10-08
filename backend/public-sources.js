@@ -34,20 +34,20 @@ function catalogResources(pkg,yearPattern){const resources=Array.isArray(pkg?.re
 async function loadRenaest(force=false){
   if(!force&&cacheGet('renaest')&&cache.renaest.expiresAt>Date.now())return cache.renaest.data;
   const pkg=await getJson(RENAEST_CKAN);
-  const resources=catalogResources(pkg,/RENAEST\\s*-?\\s*Mensal\\s*-?\\s*(0[1-9]|1[0-2])-20(?:25|26)/i);
+  const resources=catalogResources(pkg,/RENAEST\s*-?\s*Mensal\s*-?\s*(0[1-9]|1[0-2])-20(?:25|26)/i);
   const latest=resources[0]||null;
   let rows=[];
   let ingestion='catalogo';
   let ingestionError=null;
   if(latest?.id){
     try{
-      const ds=await getJson(\`https://dados.transportes.gov.br/api/3/action/datastore_search?resource_id=\${encodeURIComponent(latest.id)}&limit=5000\`);
+      const ds=await getJson(`https://dados.transportes.gov.br/api/3/action/datastore_search?resource_id=${encodeURIComponent(latest.id)}&limit=5000`);
       rows=Array.isArray(ds?.result?.records)?ds.result.records:[];
       if(rows.length)ingestion='datastore';
     }catch(error){ingestionError=error.message}
   }
   const keys=rows.length?Object.keys(rows[0]):[];
-  const normalizeKey=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  const normalizeKey=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
   const municipalityKey=keys.find(k=>/(municipio|nomemunicipio|municipionome|cidade|localidade)/.test(normalizeKey(k)));
   const ufKey=keys.find(k=>normalizeKey(k)==='uf'||normalizeKey(k).includes('siglauf'));
   const joinville=rows.filter(row=>{
@@ -95,14 +95,14 @@ async function loadSimgeo(force=false){
     const nextDate=new Date(Date.UTC(year,month,1));
     const nextYear=nextDate.getUTCFullYear();
     const nextMonth=String(nextDate.getUTCMonth()+1).padStart(2,'0');
-    const where=encodeURIComponent(\`data >= DATE '\${year}-\${m}-01' AND data < DATE '\${nextYear}-\${nextMonth}-01'\`);
-    return getJson(\`\${SIMGEO_ACCIDENTS}/query?where=\${where}&returnCountOnly=true&f=json\`);
+    const where=encodeURIComponent(`data >= DATE '${year}-${m}-01' AND data < DATE '${nextYear}-${nextMonth}-01'`);
+    return getJson(`${SIMGEO_ACCIDENTS}/query?where=${where}&returnCountOnly=true&f=json`);
   });
   const baseResults=await Promise.allSettled([
-    getJson(\`\${SIMGEO_SCHOOLS}/query?where=1%3D1&returnCountOnly=true&f=json\`),
-    getJson(\`\${SIMGEO_ROOT}/planejamento/MapServer/layers?f=json\`),
-    getJson(\`\${SIMGEO_CYCLE}/query?where=1%3D1&outFields=nome_logra,ciclo,extensao,categoria&returnGeometry=false&resultRecordCount=2000&f=json\`),
-    getJson(\`\${SIMGEO_ACCIDENTS}?f=json\`),
+    getJson(`${SIMGEO_SCHOOLS}/query?where=1%3D1&returnCountOnly=true&f=json`),
+    getJson(`${SIMGEO_ROOT}/planejamento/MapServer/layers?f=json`),
+    getJson(`${SIMGEO_CYCLE}/query?where=1%3D1&outFields=nome_logra,ciclo,extensao,categoria&returnGeometry=false&resultRecordCount=2000&f=json`),
+    getJson(`${SIMGEO_ACCIDENTS}?f=json`),
     ...monthQueries(2025,12),
     ...monthQueries(currentYear,currentYear===2026?currentMonth:12)
   ]);
@@ -118,8 +118,8 @@ async function loadSimgeo(force=false){
   const roadQueries=[];
   for(const year of [2025,currentYear]){
     if(!roadField)continue;
-    const where=encodeURIComponent(\`ano=\${year}\`);
-    roadQueries.push(getJson(\`\${SIMGEO_ACCIDENTS}/query?where=\${where}&outStatistics=\${stats}&groupByFieldsForStatistics=\${encodeURIComponent(roadField)}&orderByFields=sinistros%20DESC&outFields=\${encodeURIComponent(roadField)}&returnGeometry=false&resultRecordCount=100&f=json\`));
+    const where=encodeURIComponent(`ano=${year}`);
+    roadQueries.push(getJson(`${SIMGEO_ACCIDENTS}/query?where=${where}&outStatistics=${stats}&groupByFieldsForStatistics=${encodeURIComponent(roadField)}&orderByFields=sinistros%20DESC&outFields=${encodeURIComponent(roadField)}&returnGeometry=false&resultRecordCount=100&f=json`));
   }
   const roadResults=await Promise.allSettled(roadQueries);
   const parseRoads=(result,year)=>{
@@ -157,7 +157,7 @@ async function loadSimgeo(force=false){
     urls:{portal:SIMGEO_URL,rest:SIMGEO_ROOT,schools:SIMGEO_SCHOOLS,roads:SIMGEO_ROADS,cycle:SIMGEO_CYCLE,accidents:SIMGEO_ACCIDENTS},
     summary:{
       totalOccurrences:null,
-      schoolUnits:schools.count==null?null:\`\${schools.count} (todas as categorias: municipais, estaduais, conveniadas e rurais/CEIs)\`,
+      schoolUnits:schools.count==null?null:`${schools.count} (todas as categorias: municipais, estaduais, conveniadas e rurais/CEIs)`,
       schoolUnitsCount:schools.count??null,
       schoolUnitsScope:'CEIs + municipais + estaduais + conveniadas + rurais',
       planningLayers:layers.length,
