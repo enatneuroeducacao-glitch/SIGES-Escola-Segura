@@ -16,8 +16,8 @@ const DB=path.join(__dirname,'data','db.json');
 function ensureValidationTestUsers(){
   if(process.env.SIGES_TEST_USERS_ENABLED!=='true') return;
   const db=read();
-  const schoolToken=String(process.env.SIGES_TEST_SCHOOL_TOKEN||'').trim(), schoolPassword=String(process.env.SIGES_TEST_SCHOOL_PASSWORD||'').trim();
-  const studentToken=String(process.env.SIGES_TEST_STUDENT_TOKEN||'').trim(), studentPassword=String(process.env.SIGES_TEST_STUDENT_PASSWORD||'').trim();
+  const schoolToken=String(process.env.SIGES_TEST_SCHOOL_TOKEN||'ES-TEST-ESCOLA').trim(), schoolPassword=String(process.env.SIGES_TEST_SCHOOL_PASSWORD||'Teste@2026').trim();
+  const studentToken=String(process.env.SIGES_TEST_STUDENT_TOKEN||'ES-TEST-ALUNO').trim(), studentPassword=String(process.env.SIGES_TEST_STUDENT_PASSWORD||'Teste@2026').trim();
   if(!schoolToken||!schoolPassword||!studentToken||!studentPassword) return;
   const schoolUserId='usr_test_school_validation', studentUserId='usr_test_student_validation';
   let school=db.schools.find(x=>x.id==='sch_test_validation');
