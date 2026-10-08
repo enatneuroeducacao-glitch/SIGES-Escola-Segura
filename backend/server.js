@@ -70,6 +70,30 @@ async function sendEmail({to,subject,html}){
     return {ok:true,configured:true,id:body.id||null};
   }catch(error){console.error('Resend exception',error.message);return {ok:false,configured:true,error:{message:error.message}};}
 }
+function createAccessCredential(){
+  const raw='ES-'+crypto.randomBytes(12).toString('hex').toUpperCase();
+  return {raw,hash:crypto.createHash('sha256').update(raw).digest('hex')};
+}
+function studentRiskAssessment({name,email,profile,school}){
+  const flags=[];
+  const cleanName=String(name||'').trim();
+  if(cleanName.split(/\\s+/).filter(Boolean).length<2) flags.push('nome_incompleto');
+  if(!school) flags.push('escola_nao_localizada');
+  if(!email) flags.push('sem_email');
+  const birth=String(profile?.birthDate||'');
+  if(birth){
+    const age=(Date.now()-new Date(birth+'T00:00:00').getTime())/(365.2425*86400000);
+    if(!Number.isFinite(age)||age<5||age>25) flags.push('faixa_etaria_incompativel');
+    if(age<18&&!String(profile?.responsibleContact||'').trim()) flags.push('responsavel_sem_contato');
+  }
+  const grade=String(profile?.grade||'').trim().toLowerCase();
+  if(/^(faculdade|superior|pos|pós|universidade)/.test(grade)) flags.push('etapa_incompativel');
+  return {score:flags.length,flags,suspicious:flags.length>0};
+}
+function findUserByAccessCredential(db,raw){
+  const hash=crypto.createHash('sha256').update(String(raw||'')).digest('hex');
+  return db.users.find(x=>x.accessTokenHash===hash);
+}
 function createEmailVerification(db,u){
   db.emailVerifications=db.emailVerifications||[];
   db.emailVerifications=db.emailVerifications.filter(x=>x.userId!==u.id);
@@ -134,8 +158,8 @@ app.post('/api/register',async(req,res)=>{
   const schoolValidation=!emailProvided && ['aluno','aluno_guia'].includes(role);
   if(!emailProvided&&!schoolValidation) return res.status(400).json({error:'Para este perfil, o e-mail é obrigatório.'});
   if(emailProvided&&db.users.some(u=>u.email===e)) return res.status(409).json({error:'Este e-mail já está cadastrado.'});
-  const username=schoolValidation?'ALU-'+crypto.randomBytes(4).toString('hex').toUpperCase():undefined;
-  const u={id:'usr_'+Date.now(),role,name:name.trim(),email:e,...(username?{username}:{}),passwordHash:await bcrypt.hash(password,10),status:schoolValidation?'pending_school':'pending_email',emailVerifiedAt:null,authMethod:schoolValidation?'school_validation':'email',profile,createdAt:new Date().toISOString()};
+  const access=createAccessCredential();
+  const u={id:'usr_'+Date.now(),role,name:name.trim(),email:e,username:'ALU-'+crypto.randomBytes(4).toString('hex').toUpperCase(),accessTokenHash:access.hash,accessTokenIssuedAt:new Date().toISOString(),passwordHash:await bcrypt.hash(password,10),status:schoolValidation?'pending_school':'pending_email',emailVerifiedAt:null,authMethod:schoolValidation?'school_validation':'token',profile,createdAt:new Date().toISOString()};
   if(role==='escola'){
     let school=null;
     if(profile.sigesSchoolId){
@@ -168,19 +192,24 @@ app.post('/api/register',async(req,res)=>{
     if(!school)return res.status(400).json({error:'Selecione uma escola válida no SIGES.'});
     const student={id:'std_'+Date.now(),userId:u.id,name:name.trim(),birthDate:String(profile.birthDate||''),schoolId:school.id,grade:String(profile.grade||'').trim(),className:String(profile.className||'').trim(),shift:String(profile.shift||'').trim(),responsibleName:String(profile.responsibleName||'').trim(),responsibleContact:String(profile.responsibleContact||'').trim(),status:'pending',isGuide:role==='aluno_guia',guideCertified:false,createdAt:new Date().toISOString(),createdBy:u.id};
     if(!student.birthDate||!student.grade||!student.className)return res.status(400).json({error:'Data de nascimento, série/etapa e turma são obrigatórios.'});
+    const risk=studentRiskAssessment({name,email:e,profile,school});
+    u.riskScore=risk.score;
+    u.riskFlags=risk.flags;
+    u.requiresSchoolValidation=schoolValidation||risk.suspicious;
+    u.validationReason=risk.suspicious?'Cadastro classificado para validação escolar adicional':'';
     db.students.push(student);u.profile={...profile,schoolId:school.id,studentId:student.id};
   }
   db.users.push(u);
   if(schoolValidation){
     audit(db,'REGISTER',u.id,{role,schoolValidationRequired:true});
     write(db);
-    return res.status(201).json({message:'Cadastro recebido. A escola irá validar seu vínculo antes de liberar o acesso.',emailVerificationSent:false,schoolValidationRequired:true,accessCode:u.username,user:safe(u)});
+    return res.status(201).json({message:'Cadastro recebido. A escola irá validar seu vínculo antes de liberar o acesso.',emailVerificationSent:false,schoolValidationRequired:true,accessToken:access.raw,accessCode:u.username,user:safe(u)});
   }
   const verificationToken=createEmailVerification(db,u);
   audit(db,'REGISTER',u.id,{role,emailVerificationPending:true});
   write(db);
   const mail=await sendVerificationEmail(u,verificationToken);
-  res.status(201).json({message:mail.configured?'Cadastro criado. Enviamos um e-mail para confirmar seu endereço.':'Cadastro criado. O e-mail de confirmação será enviado assim que o serviço de e-mail estiver configurado.',emailVerificationSent:mail.ok,user:safe(u)});
+  res.status(201).json({message:mail.configured?(u.requiresSchoolValidation?'Cadastro criado. Confirme o e-mail. Como medida de segurança, a escola também precisará validar seu vínculo.':'Cadastro criado. Confirme seu e-mail para ativar o acesso.'):'Cadastro criado. O e-mail de confirmação será enviado assim que o serviço de e-mail estiver configurado.',emailVerificationSent:mail.ok,schoolValidationRequired:Boolean(u.requiresSchoolValidation),accessToken:access.raw,user:safe(u)});
 
 });
 
@@ -204,11 +233,11 @@ app.post('/api/use-school-validation',async(req,res)=>{
 });
 
 app.post('/api/login',async(req,res)=>{
-  const identifier=String(req.body.email||req.body.identifier||'').trim().toLowerCase(),password=String(req.body.password||'');
-  const db=read(),u=db.users.find(x=>x.email===identifier || String(x.username||'').toLowerCase()===identifier);
-  if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'E-mail, código de acesso ou senha inválidos.'});
+  const identifier=String(req.body.token||req.body.identifier||'').trim(),password=String(req.body.password||'');
+  const db=read(),u=findUserByAccessCredential(db,identifier)||db.users.find(x=>String(x.username||'').toLowerCase()===identifier.toLowerCase());
+  if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'Token de acesso ou senha inválidos.'});
   if(u.status!=='active'){
-    const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu vínculo escolar ainda aguarda validação pela escola ou pela Administração SIGES.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
+    const messages={pending_email:u.requiresSchoolValidation?'Confirme seu e-mail. Depois, a escola deverá validar seu vínculo por segurança.':'Confirme seu e-mail para ativar o acesso.',pending_school:'Seu cadastro foi classificado para validação escolar adicional. A escola precisa confirmar seu vínculo antes do primeiro acesso.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
     return res.status(403).json({code:u.status,error:messages[u.status]||'Esta conta ainda aguarda validação.',emailVerified:Boolean(u.emailVerifiedAt)});
   }
   audit(db,'LOGIN',u.id,{role:u.role});write(db);
@@ -227,12 +256,12 @@ app.get('/api/verify-email',async(req,res)=>{
   if(!u)return res.status(404).json({error:'Conta não localizada.'});
   u.emailVerifiedAt=new Date().toISOString();
   if(u.role==='escola')u.status='pending_admin';
-  else if(['aluno','aluno_guia'].includes(u.role))u.status='pending_school';
+  else if(['aluno','aluno_guia'].includes(u.role))u.status=u.requiresSchoolValidation?'pending_school':'active';
   else u.status='active';
   db.emailVerifications=db.emailVerifications.filter(x=>x.id!==item.id);
   audit(db,'EMAIL_VERIFIED',u.id,{role:u.role});
   write(db);
-  res.json({ok:true,status:u.status,message:u.role==='escola'?'E-mail confirmado. Seu cadastro aguarda validação administrativa.':'E-mail confirmado. Seu vínculo escolar aguarda validação da escola ou da Administração SIGES.'});
+  res.json({ok:true,status:u.status,message:u.role==='escola'?'E-mail confirmado. Seu cadastro aguarda validação administrativa.':u.requiresSchoolValidation?'E-mail confirmado. Por segurança, a escola ainda precisa validar seu vínculo.':'E-mail confirmado. Seu acesso foi liberado.'});
 });
 app.post('/api/resend-verification',async(req,res)=>{
   const email=String(req.body.email||'').trim().toLowerCase();
