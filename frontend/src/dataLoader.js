@@ -145,9 +145,12 @@ export async function loadSigesData({refresh=false}={}){
   const base=await loadStatic();
   const suffix=refresh?'?refresh=1':'';
   const results=await Promise.allSettled([api(`/public-sources/cbvj${suffix}`),api(`/public-sources/detrans${suffix}`),api(`/public-sources/simgeo${suffix}`)]);
+  const sourceNames=['cbvj','detrans','simgeo'];
   const sources={};
-  results.forEach((r,i)=>{if(r.status==='fulfilled')sources[['cbvj','detrans','simgeo'][i]]=r.value});
+  const sourceHealth={};
+  results.forEach((r,i)=>{const key=sourceNames[i];if(r.status==='fulfilled'){sources[key]=r.value;sourceHealth[key]={status:r.value?.sourceStatus||'online',retrievedAt:r.value?.retrievedAt||null,error:null}}else{sourceHealth[key]={status:'offline',retrievedAt:null,error:r.reason?.message||'Falha na consulta'}}});
   const data=enrich(base,sources);
+  data.meta={...(data.meta||{}),sourceHealth};
   data.matrix=data.matrix.map(x=>{
     const territorial=resolveTerritorialPriority(x);
     const d=classifySchool(x);
