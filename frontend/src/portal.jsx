@@ -158,7 +158,7 @@ function Auth({role,onDone}){
           Não tem e-mail? Tudo bem. O vínculo será confirmado pela escola com base nos dados escolares informados. Após a aprovação, entre com o código de acesso e a senha.
         </div>}
 
-        <input required={mode==='login'||validationMethod==='email'||role!=='aluno'} type="email" placeholder={mode==='login'?'E-mail ou código de acesso':'E-mail (opcional na validação pela escola)'} value={form.email||''} onChange={e=>set('email',e.target.value)}/>
+        <input required={mode==='login'||validationMethod==='email'||role!=='aluno'} type={mode==='login'?'text':'email'} placeholder={mode==='login'?'E-mail ou código de acesso':'E-mail (opcional na validação pela escola)'} value={form.email||''} onChange={e=>set('email',e.target.value)}/>
         <input required minLength="6" type="password" placeholder="Senha" value={form.password||''} onChange={e=>set('password',e.target.value)}/>
         <button className="portal-primary" disabled={busy}>{busy?'Processando…':mode==='login'?'Entrar':'Criar cadastro'}</button>
       </form>
