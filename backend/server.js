@@ -56,7 +56,7 @@ function read(){
   return db;
 }
 function write(db){fs.writeFileSync(DB,JSON.stringify(db,null,2))}
-function safe(u){const {passwordHash,...x}=u;return x}
+function safe(u){const {passwordHash,accessTokenHash,...x}=u;return x}
 function token(u){return jwt.sign({id:u.id,role:u.role},SECRET,{expiresIn:'8h'})}
 function audit(db,action,userId,details={}){db.audit.push({id:Date.now().toString(),action,userId,details,at:new Date().toISOString()})}
 const APP_URL=(process.env.PUBLIC_APP_URL||'https://escola-segura.hsi-doth-pg.com.br').replace(/\/$/,'');
@@ -77,7 +77,7 @@ function createAccessCredential(){
 function studentRiskAssessment({name,email,profile,school}){
   const flags=[];
   const cleanName=String(name||'').trim();
-  if(cleanName.split(/\\s+/).filter(Boolean).length<2) flags.push('nome_incompleto');
+  if(cleanName.split(/\s+/).filter(Boolean).length<2) flags.push('nome_incompleto');
   if(!school) flags.push('escola_nao_localizada');
   if(!email) flags.push('sem_email');
   const birth=String(profile?.birthDate||'');
