@@ -186,7 +186,7 @@ app.post('/api/register',async(req,res)=>{
 
 app.post('/api/login',async(req,res)=>{
   const identifier=String(req.body.email||req.body.identifier||'').trim().toLowerCase(),password=String(req.body.password||'');
-  const db=read(),u=db.users.find(x=>x.email===identifier || x.username===identifier);
+  const db=read(),u=db.users.find(x=>x.email===identifier || String(x.username||'').toLowerCase()===identifier);
   if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'E-mail, código de acesso ou senha inválidos.'});
   if(u.status!=='active'){
     const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu e-mail foi confirmado. O vínculo escolar ainda aguarda validação.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
