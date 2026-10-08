@@ -184,6 +184,25 @@ app.post('/api/register',async(req,res)=>{
 
 });
 
+app.post('/api/use-school-validation',async(req,res)=>{
+  const email=String(req.body.email||'').trim().toLowerCase();
+  const password=String(req.body.password||'');
+  if(!email||!password)return res.status(400).json({error:'Informe o e-mail e a senha usados no cadastro.'});
+
+  const db=read(),u=db.users.find(x=>x.email===email);
+  if(!u||!(await bcrypt.compare(password,u.passwordHash)))return res.status(401).json({error:'E-mail ou senha inválidos.'});
+  if(!['aluno','aluno_guia'].includes(u.role))return res.status(403).json({error:'A validação pela escola está disponível somente para alunos.'});
+  if(u.status==='active')return res.status(400).json({error:'Esta conta já está ativa.'});
+  if(u.status!=='pending_email')return res.status(400).json({error:'Esta conta não está aguardando confirmação de e-mail.'});
+
+  u.username=u.username||'ALU-'+crypto.randomBytes(4).toString('hex').toUpperCase();
+  u.authMethod='school_validation';
+  u.status='pending_school';
+  audit(db,'SCHOOL_VALIDATION_SELECTED',u.id,{role:u.role});
+  write(db);
+  res.json({message:'Validação por escola ativada. Aguarde a confirmação do seu vínculo escolar.',accessCode:u.username,user:safe(u)});
+});
+
 app.post('/api/login',async(req,res)=>{
   const identifier=String(req.body.email||req.body.identifier||'').trim().toLowerCase(),password=String(req.body.password||'');
   const db=read(),u=db.users.find(x=>x.email===identifier || String(x.username||'').toLowerCase()===identifier);
