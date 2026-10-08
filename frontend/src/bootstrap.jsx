@@ -7,6 +7,10 @@ const showFatal=(error)=>{
 };
 window.addEventListener('error',event=>showFatal(event.error||event.message));
 window.addEventListener('unhandledrejection',event=>showFatal(event.reason));
+
 const p=location.pathname.replace(/\/$/,'');
-const modulePath=p==='/aluno'||p==='/escola'||p==='/verificar-email'?'./portal.jsx':'./siges-main.jsx';
-import(modulePath).catch(showFatal);
+const load= p==='/aluno'||p==='/escola'||p==='/verificar-email'
+  ? import('./portal.jsx')
+  : import('./siges-main.jsx');
+
+load.catch(showFatal);
