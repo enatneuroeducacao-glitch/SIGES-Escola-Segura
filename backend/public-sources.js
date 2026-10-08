@@ -31,53 +31,146 @@ function parseDetrans(html){const items=[];const re=/<a[^>]+href=["']([^"']+)["'
 async function loadDetrans(force=false){if(!force&&cacheGet('detrans')&&cache.detrans.expiresAt>Date.now())return cache.detrans.data;const data=parseDetrans(await fetchText(DETRANS_URL));cacheSet('detrans',data);return data}
 async function getJson(url){const r=await withTimeout(fetch(url,{headers:{'User-Agent':'SIGES-Escola-Segura/3.7 public-data-reader'}}));if(!r.ok)throw new Error(`Fonte pública respondeu HTTP ${r.status}`);return r.json()}
 function catalogResources(pkg,yearPattern){const resources=Array.isArray(pkg?.result?.resources)?pkg.result.resources:[];return resources.filter(x=>yearPattern.test(String(x.name||x.description||''))).map(x=>({id:x.id,name:x.name||x.description||'Recurso',format:x.format||null,url:x.url||null,lastModified:x.last_modified||x.metadata_modified||null,size:x.size||null})).sort((a,b)=>String(b.name).localeCompare(String(a.name),undefined,{numeric:true}));}
-async function loadRenaest(force=false){if(!force&&cacheGet('renaest')&&cache.renaest.expiresAt>Date.now())return cache.renaest.data;const pkg=await getJson(RENAEST_CKAN);const resources=catalogResources(pkg,/RENAEST\\s*-?\\s*Mensal\\s*-?\\s*(0[1-9]|1[0-2])-2026/i);const months=resources.map(x=>{const m=String(x.name).match(/(0[1-9]|1[0-2])-2026/);return m?Number(m[1]):null}).filter(Boolean).sort((a,b)=>a-b);const latest=months.length?months[months.length-1]:null;const data={source:'RENAEST',sourceName:'Registro Nacional de Sinistros e Estatísticas de Trânsito',municipality:'Brasil / Joinville quando a competência possuir recorte municipal',retrievedAt:new Date().toISOString(),sourceStatus:resources.length?'online':'partial',latestCompleteYear:2026,latestAvailableMonth:latest,available2026Months:months,resourceCount:resources.length,resources,methodology:'Catálogo oficial consultado via API CKAN. O SIGES registra disponibilidade e atualidade da competência sem inventar dados ainda não publicados. A ingestão analítica por município será feita sobre os arquivos mensais disponíveis.',urls:{dataset:'https://dados.transportes.gov.br/dataset/renaest',api:RENAEST_CKAN}};cacheSet('renaest',data);return data}
+async function loadRenaest(force=false){
+  if(!force&&cacheGet('renaest')&&cache.renaest.expiresAt>Date.now())return cache.renaest.data;
+  const pkg=await getJson(RENAEST_CKAN);
+  const resources=catalogResources(pkg,/RENAEST\\s*-?\\s*Mensal\\s*-?\\s*(0[1-9]|1[0-2])-20(?:25|26)/i);
+  const latest=resources[0]||null;
+  let rows=[];
+  let ingestion='catalogo';
+  let ingestionError=null;
+  if(latest?.id){
+    try{
+      const ds=await getJson(\`https://dados.transportes.gov.br/api/3/action/datastore_search?resource_id=\${encodeURIComponent(latest.id)}&limit=5000\`);
+      rows=Array.isArray(ds?.result?.records)?ds.result.records:[];
+      if(rows.length)ingestion='datastore';
+    }catch(error){ingestionError=error.message}
+  }
+  const keys=rows.length?Object.keys(rows[0]):[];
+  const normalizeKey=v=>String(v||'').normalize('NFD').replace(/[\\u0300-\\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
+  const municipalityKey=keys.find(k=>/(municipio|nomemunicipio|municipionome|cidade|localidade)/.test(normalizeKey(k)));
+  const ufKey=keys.find(k=>normalizeKey(k)==='uf'||normalizeKey(k).includes('siglauf'));
+  const joinville=rows.filter(row=>{
+    if(!municipalityKey)return false;
+    const municipality=normalizeKey(row[municipalityKey]);
+    const uf=ufKey?normalizeKey(row[ufKey]):'';
+    return municipality==='joinville'&&(uf===''||uf==='sc');
+  });
+  const numericCandidates=keys.filter(k=>/(sinistro|acidente|ocorrencia|quantidade|total|vitima|morto|obito|ferido)/.test(normalizeKey(k)));
+  const aggregates={};
+  for(const key of numericCandidates){
+    const values=joinville.map(r=>Number(String(r[key]).replace(',','.'))).filter(Number.isFinite);
+    if(values.length)aggregates[key]=values.reduce((a,b)=>a+b,0);
+  }
+  const data={
+    source:'RENAEST',
+    sourceName:'Registro Nacional de Sinistros e Estatísticas de Trânsito',
+    municipality:'Joinville',
+    retrievedAt:new Date().toISOString(),
+    sourceStatus:latest?(rows.length?'online':'partial'):'offline',
+    latestCompleteYear:2026,
+    latestAvailableMonth:latest?(String(latest.name).match(/(0[1-9]|1[0-2])-2026/)||[])[1]||null:null,
+    available2026Months:resources.filter(x=>/2026/.test(x.name)).map(x=>{const m=String(x.name).match(/(0[1-9]|1[0-2])-2026/);return m?Number(m[1]):null}).filter(Boolean).sort((a,b)=>a-b),
+    resourceCount:resources.length,
+    resources,
+    ingestion,
+    ingestionError,
+    latestResource:latest,
+    joinvilleRecords:joinville.length,
+    joinvilleAggregates:aggregates,
+    detectedFields:{municipality:municipalityKey||null,uf:ufKey||null,numeric:numericCandidates},
+    methodology:'O SIGES consulta o catálogo RENAEST e, quando o recurso mensal está exposto no DataStore, ingere os registros para dentro da aplicação e filtra Joinville/SC. O painel identifica explicitamente quando a fonte oferece apenas catálogo, evitando transformar disponibilidade de arquivo em dado analítico.',
+    urls:{dataset:'https://dados.transportes.gov.br/dataset/renaest',api:RENAEST_CKAN}
+  };
+  cacheSet('renaest',data);
+  return data;
+}
 async function loadHealth(force=false){if(!force&&cacheGet('health')&&cache.health.expiresAt>Date.now())return cache.health.data;const pkg=await getJson(SUS_HOSPITALS_CKAN);const resources=catalogResources(pkg,/2026/i);const latest=resources[0]||null;const data={source:'SAUDE',sourceName:'Ministério da Saúde — Hospitais e Leitos',municipality:'Brasil / recorte municipal quando disponível',retrievedAt:new Date().toISOString(),sourceStatus:resources.length?'online':'partial',latestCompleteYear:2026,latestResource:latest,resourceCount:resources.length,resources,methodology:'Catálogo oficial do Portal de Dados Abertos do SUS. Os dados agregados respeitam as limitações de privacidade da fonte; o SIGES não identifica cidadãos.',urls:{dataset:'https://dadosabertos.saude.gov.br/dataset/hospitais-e-leitos',api:SUS_HOSPITALS_CKAN}};cacheSet('health',data);return data}
 async function loadSimgeo(force=false){
   if(!force&&cacheGet('simgeo')&&cache.simgeo.expiresAt>Date.now())return cache.simgeo.data;
-  const monthQueries=Array.from({length:12},(_,i)=>{
-    const m=String(i+1).padStart(2,'0'),next=String(i+2).padStart(2,'0');
-    const endDate=i===11?'2026-01-01':`2025-${next}-01`;
-    const where=encodeURIComponent(`data >= DATE '2025-${m}-01' AND data < DATE '${endDate}'`);
-    return getJson(`${SIMGEO_ACCIDENTS}/query?where=${where}&returnCountOnly=true&f=json`);
+  const currentYear=new Date().getFullYear();
+  const currentMonth=new Date().getMonth()+1;
+  const monthQueries=(year,limitMonth)=>Array.from({length:limitMonth},(_,i)=>{
+    const month=i+1,m=String(month).padStart(2,'0');
+    const nextDate=new Date(Date.UTC(year,month,1));
+    const nextYear=nextDate.getUTCFullYear();
+    const nextMonth=String(nextDate.getUTCMonth()+1).padStart(2,'0');
+    const where=encodeURIComponent(\`data >= DATE '\${year}-\${m}-01' AND data < DATE '\${nextYear}-\${nextMonth}-01'\`);
+    return getJson(\`\${SIMGEO_ACCIDENTS}/query?where=\${where}&returnCountOnly=true&f=json\`);
   });
-  const results=await Promise.allSettled([
-    getJson(`${SIMGEO_SCHOOLS}/query?where=1%3D1&returnCountOnly=true&f=json`),
-    getJson(`${SIMGEO_ROOT}/planejamento/MapServer/layers?f=json`),
-    getJson(`${SIMGEO_CYCLE}/query?where=1%3D1&outFields=nome_logra,ciclo,extensao,categoria&returnGeometry=false&resultRecordCount=2000&f=json`),
-    getJson(`${SIMGEO_ACCIDENTS}/query?where=ano%3D2025&returnCountOnly=true&f=json`),
-    ...monthQueries
+  const baseResults=await Promise.allSettled([
+    getJson(\`\${SIMGEO_SCHOOLS}/query?where=1%3D1&returnCountOnly=true&f=json\`),
+    getJson(\`\${SIMGEO_ROOT}/planejamento/MapServer/layers?f=json\`),
+    getJson(\`\${SIMGEO_CYCLE}/query?where=1%3D1&outFields=nome_logra,ciclo,extensao,categoria&returnGeometry=false&resultRecordCount=2000&f=json\`),
+    getJson(\`\${SIMGEO_ACCIDENTS}?f=json\`),
+    ...monthQueries(2025,12),
+    ...monthQueries(currentYear,currentYear===2026?currentMonth:12)
   ]);
-  const value=(i,fallback)=>results[i]?.status==='fulfilled'?results[i].value:fallback;
-  const schools=value(0,{count:null}),layersJson=value(1,{layers:[]}),cycleJson=value(2,{features:[]}),accidentYear2025=value(3,{count:null});
-  const monthResults=results.slice(4);
+  const value=(i,fallback)=>baseResults[i]?.status==='fulfilled'?baseResults[i].value:fallback;
+  const schools=value(0,{count:null});
+  const layersJson=value(1,{layers:[]});
+  const cycleJson=value(2,{features:[]});
+  const accidentMeta=value(3,{fields:[]});
+  const fields=Array.isArray(accidentMeta.fields)?accidentMeta.fields:[];
+  const oidField=fields.find(x=>x.type==='esriFieldTypeOID')?.name||'objectid';
+  const roadField=['logradouro','nomelog','nome_logra','via','local'].find(name=>fields.some(x=>String(x.name||'').toLowerCase()===name));
+  const stats=encodeURIComponent(JSON.stringify([{statisticType:'count',onStatisticField:oidField,outStatisticFieldName:'sinistros'}]));
+  const roadQueries=[];
+  for(const year of [2025,currentYear]){
+    if(!roadField)continue;
+    const where=encodeURIComponent(\`ano=\${year}\`);
+    roadQueries.push(getJson(\`\${SIMGEO_ACCIDENTS}/query?where=\${where}&outStatistics=\${stats}&groupByFieldsForStatistics=\${encodeURIComponent(roadField)}&orderByFields=sinistros%20DESC&outFields=\${encodeURIComponent(roadField)}&returnGeometry=false&resultRecordCount=100&f=json\`));
+  }
+  const roadResults=await Promise.allSettled(roadQueries);
+  const parseRoads=(result,year)=>{
+    if(result?.status!=='fulfilled')return[];
+    return (result.value.features||[]).map(f=>{
+      const a=f.attributes||{};
+      const road=clean(a[roadField]);
+      const count=Number(a.sinistros);
+      return road&&Number.isFinite(count)?{road,count,year}:null;
+    }).filter(Boolean);
+  };
+  const corridors2025=parseRoads(roadResults[0],2025);
+  const corridors2026=parseRoads(roadResults[1],currentYear);
+  const monthStart2025=4;
+  const month2025Results=baseResults.slice(monthStart2025,monthStart2025+12);
+  const month2026Results=baseResults.slice(monthStart2025+12);
+  const monthly2025=month2025Results.map((r,i)=>({month:i+1,count:r.status==='fulfilled'?Number(r.value.count)||0:null,status:r.status==='fulfilled'?'ok':'unavailable'}));
+  const monthly2026=month2026Results.map((r,i)=>({month:i+1,count:r.status==='fulfilled'?Number(r.value.count)||0:null,status:r.status==='fulfilled'?'ok':'unavailable'}));
   const layers=(layersJson.layers||[]).map(x=>({id:x.id,name:x.name,type:x.type}));
   const cycleCorridors=(cycleJson.features||[]).map(f=>f.attributes||{}).filter(x=>clean(x.nome_logra));
-  const monthly=monthResults.map((r,i)=>({month:i+1,count:r.status==='fulfilled'?Number(r.value.count)||0:null,status:r.status==='fulfilled'?'ok':'unavailable'}));
-  const successful=results.filter(r=>r.status==='fulfilled').length;
-  const failed=results.length-successful;
+  const successful=baseResults.filter(r=>r.status==='fulfilled').length+roadResults.filter(r=>r.status==='fulfilled').length;
+  const requested=baseResults.length+roadResults.length;
+  const failed=requested-successful;
+  const accidents2025Count=monthly2025.reduce((sum,x)=>sum+(Number.isFinite(x.count)?x.count:0),0);
+  const accidents2026Count=monthly2026.reduce((sum,x)=>sum+(Number.isFinite(x.count)?x.count:0),0);
   const data={
     source:'SIMGEO',
     sourceName:'Sistema de Informações Municipais Georreferenciadas',
     municipality:'Joinville',
     retrievedAt:new Date().toISOString(),
-    latestCompleteYear:2025,
-    latestPublicationDate:null,
+    latestCompleteYear:currentYear,
     sourceStatus:failed===0?'online':successful>0?'partial':'offline',
-    queryHealth:{requested:results.length,succeeded:successful,failed},
-    methodology:'Leitura somente consulta das camadas públicas do SIMGeo. Quantidades são inventário de dados, não ocorrência de sinistros. A camada de Unidades Escolares inclui CEIs, escolas municipais, escolas estaduais, escolas conveniadas e escolas municipais rurais conforme o campo categoria da fonte oficial. A infraestrutura cicloviária somente é atribuída quando há correspondência nominal com o logradouro.',
+    queryHealth:{requested,succeeded:successful,failed},
+    methodology:'Consulta direta às camadas públicas do SIMGeo. O SIGES traz as contagens para dentro da aplicação e mantém a fonte apenas como rastreabilidade. A camada de acidentes registra acidentes de trânsito com vítimas no Município de Joinville.',
     urls:{portal:SIMGEO_URL,rest:SIMGEO_ROOT,schools:SIMGEO_SCHOOLS,roads:SIMGEO_ROADS,cycle:SIMGEO_CYCLE,accidents:SIMGEO_ACCIDENTS},
     summary:{
       totalOccurrences:null,
-      schoolUnits:schools.count==null?null:`${schools.count} (todas as categorias: municipais, estaduais, conveniadas e rurais/CEIs)`,
+      schoolUnits:schools.count==null?null:\`\${schools.count} (todas as categorias: municipais, estaduais, conveniadas e rurais/CEIs)\`,
       schoolUnitsCount:schools.count??null,
       schoolUnitsScope:'CEIs + municipais + estaduais + conveniadas + rurais',
       planningLayers:layers.length,
       cycleSegments:cycleCorridors.length,
-      accidents2025Count:accidentYear2025.count==null?null:Number(accidentYear2025.count)||0,
-      accidents2025Monthly:monthly
+      accidents2025Count,
+      accidents2026Count,
+      accidents2025Monthly:monthly2025,
+      accidents2026Monthly:monthly2026,
+      accidentRoadField:roadField||null
     },
     corridors:cycleCorridors,
+    corridors2025,
+    corridors2026,
     layers,
     privacy:'Somente metadados e contagens agregadas; nenhuma alteração de camada é realizada pelo SIGES.'
   };
