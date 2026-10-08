@@ -591,6 +591,19 @@ app.post('/api/school/students/:id/decision',auth,async(req,res)=>{
   if(u){u.status='active';u.validatedBy=req.user.id;u.validatedAt=new Date().toISOString();}
   audit(db,'SCHOOL_STUDENT_APPROVED',req.user.id,{studentId:student.id,authMethod:u.authMethod||'email'});write(db);if(u.email)await sendEmail({to:u.email,subject:'Vínculo escolar confirmado — Escola Segura',html:`<div style="font-family:Arial,sans-serif;padding:28px;color:#18324a"><h2>🛡️ Vínculo confirmado</h2><p>Olá, <b>${u.name}</b>.</p><p>A escola confirmou seu vínculo. Seu acesso à Escola Segura está liberado.</p><p><a href="${APP_URL}/aluno">Acessar a área do aluno</a></p></div>`});res.json({student});
 });
+app.delete('/api/school/students/:id',auth,(req,res)=>{
+  if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});
+  const db=read(),student=db.students.find(s=>s.id===req.params.id),school=schoolForUser(db,req.user);
+  if(!student||!school||student.schoolId!==school.id)return res.status(404).json({error:'Aluno não localizado nesta escola.'});
+  if(student.status!=='pending')return res.status(400).json({error:'Somente cadastros pendentes podem ser excluídos pela escola.'});
+  const u=db.users.find(x=>x.id===student.userId);
+  db.students=db.students.filter(x=>x.id!==student.id);
+  db.users=db.users.filter(x=>x.id!==student.userId);
+  db.emailVerifications=(db.emailVerifications||[]).filter(x=>x.userId!==student.userId);
+  audit(db,'SCHOOL_STUDENT_DELETED',req.user.id,{studentId:student.id,userId:student.userId,studentName:student.name});
+  write(db);
+  res.json({ok:true,message:'Cadastro do aluno excluído da fila de validação.',studentId:student.id});
+});
 app.get('/api/school/students',auth,(req,res)=>{if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});const db=read(),school=schoolForUser(db,req.user);if(!school)return res.status(404).json({error:'Escola não vinculada.'});const students=db.students.filter(s=>s.schoolId===school.id);res.json({students:students.map(s=>({...s,responsibleName:undefined,responsibleContact:undefined,status:s.status}))});});
 app.post('/api/forgot',(req,res)=>{const email=String(req.body.email||'').trim().toLowerCase(),db=read(),u=db.users.find(x=>x.email===email);if(!u)return res.json({message:'Se a conta existir, a recuperação será processada.'});const t='reset_'+Date.now()+'_'+Math.random().toString(36).slice(2);db.passwordResets.push({token:t,userId:u.id,expiresAt:Date.now()+1800000});audit(db,'PASSWORD_RESET_REQUEST',u.id);write(db);res.json({message:'Solicitação registrada.',devToken:t});});
 app.post('/api/reset',async(req,res)=>{const{token,password}=req.body;if(!token||!password||password.length<6)return res.status(400).json({error:'Token e nova senha são obrigatórios.'});const db=read(),r=db.passwordResets.find(x=>x.token===token&&x.expiresAt>Date.now());if(!r)return res.status(400).json({error:'Token inválido ou expirado.'});const u=db.users.find(x=>x.id===r.userId);u.passwordHash=await bcrypt.hash(password,10);db.passwordResets=db.passwordResets.filter(x=>x.token!==token);audit(db,'PASSWORD_RESET',u.id);write(db);res.json({message:'Senha redefinida com sucesso.'});});
