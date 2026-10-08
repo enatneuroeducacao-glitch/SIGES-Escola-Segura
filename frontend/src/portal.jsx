@@ -80,7 +80,13 @@ function Auth({role,onDone}){
     setBusy(true);
     try{
       const x=await api('/resend-verification',{method:'POST',body:JSON.stringify({email:pendingEmail})});
-      setMessage(x.message);
+      if(x.sent){
+        setError('');
+        setMessage(x.message||'Nova confirmação enviada. Verifique seu e-mail.');
+      }else{
+        setMessage('');
+        setError(x.message||'Não foi possível enviar a confirmação agora. Tente novamente mais tarde.');
+      }
     }catch(e){setError(e.message)}
     finally{setBusy(false)}
   };
