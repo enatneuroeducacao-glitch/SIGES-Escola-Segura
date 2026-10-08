@@ -144,8 +144,8 @@ export function classifySchool(row){
 export async function loadSigesData({refresh=false}={}){
   const base=await loadStatic();
   const suffix=refresh?'?refresh=1':'';
-  const results=await Promise.allSettled([api(`/public-sources/cbvj${suffix}`),api(`/public-sources/detrans${suffix}`),api(`/public-sources/simgeo${suffix}`)]);
-  const sourceNames=['cbvj','detrans','simgeo'];
+  const results=await Promise.allSettled([api(`/public-sources/cbvj${suffix}`),api(`/public-sources/detrans${suffix}`),api(`/public-sources/simgeo${suffix}`),api(`/public-sources/renaest${suffix}`),api(`/public-sources/health-data${suffix}`)]);
+  const sourceNames=['cbvj','detrans','simgeo','renaest','health'];
   const sources={};
   const sourceHealth={};
   results.forEach((r,i)=>{const key=sourceNames[i];if(r.status==='fulfilled'){sources[key]=r.value;sourceHealth[key]={status:r.value?.sourceStatus||'online',retrievedAt:r.value?.retrievedAt||null,error:null}}else{sourceHealth[key]={status:'offline',retrievedAt:null,error:r.reason?.message||'Falha na consulta'}}});
