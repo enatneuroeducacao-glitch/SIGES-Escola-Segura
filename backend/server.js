@@ -278,9 +278,17 @@ app.post('/api/use-school-validation',async(req,res)=>{
 
 app.post('/api/login',async(req,res)=>{
   ensureValidationTestUsers();
-  const identifier=String(req.body.token||req.body.identifier||'').trim(),password=String(req.body.password||'');
-  const db=read(),u=findUserByAccessCredential(db,identifier)||db.users.find(x=>String(x.username||'').toLowerCase()===identifier.toLowerCase());
-  if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'Token de acesso ou senha inválidos.'});
+  const identifier=String(req.body.identifier||req.body.login||req.body.token||'').trim(),password=String(req.body.password||'');
+  if(!identifier||!password)return res.status(400).json({error:'Login e senha são obrigatórios.'});
+  const db=read();
+  const byLogin=db.users.find(x=>{
+    const login=String(x.username||'').trim().toLowerCase();
+    const email=String(x.email||'').trim().toLowerCase();
+    return login===identifier.toLowerCase()||email===identifier.toLowerCase();
+  });
+  const byToken=findUserByAccessCredential(db,identifier);
+  const u=byLogin||byToken;
+  if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'Login ou senha inválidos.'});
   if(u.status!=='active'){
     const messages={pending_email:u.requiresSchoolValidation?'Confirme seu e-mail. Depois, a escola deverá validar seu vínculo por segurança.':'Confirme seu e-mail para ativar o acesso.',pending_school:'Seu cadastro foi classificado para validação escolar adicional. A escola precisa confirmar seu vínculo antes do primeiro acesso.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
     return res.status(403).json({code:u.status,error:messages[u.status]||'Esta conta ainda aguarda validação.',emailVerified:Boolean(u.emailVerifiedAt)});
