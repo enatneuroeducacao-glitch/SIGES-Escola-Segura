@@ -85,6 +85,19 @@ function Auth({role,onDone}){
     finally{setBusy(false)}
   };
 
+  const switchToSchoolValidation=async()=>{
+    if(role!=='aluno'||!form.email||!form.password)return;
+    setBusy(true);
+    setError('');
+    try{
+      const x=await api('/use-school-validation',{method:'POST',body:JSON.stringify({email:form.email,password:form.password})});
+      setAccessCode(x.accessCode||'');
+      setMessage(x.message);
+      setPendingEmail('');
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  };
+
   return <div className="portal-auth">
     <div className="portal-auth-card">
       <div className="portal-logo"><ShieldCheck size={30}/></div>
@@ -164,6 +177,7 @@ function Auth({role,onDone}){
       </form>
 
       {mode==='login'&&pendingEmail&&<button type="button" className="portal-secondary" onClick={resend} disabled={busy}>✉️ Reenviar confirmação para {pendingEmail}</button>}
+      {mode==='login'&&role==='aluno'&&/e-mail|email/i.test(error)&&form.email&&form.password&&<button type="button" className="portal-secondary" onClick={switchToSchoolValidation} disabled={busy}>🏫 Não consigo usar o e-mail — validar pela escola</button>}
       <div className="portal-note">Para alunos, há duas formas de validação: e-mail ou confirmação do vínculo pela escola. A escola ou a Administração SIGES libera o acesso somente após validar o vínculo.</div>
     </div>
   </div>
