@@ -28,7 +28,58 @@ function extractSpeed(title){const m=String(title||'').match(/(?:redutor|control
 function parseDetrans(html){const items=[];const re=/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>([\s\S]{0,900}?)(?=<a\s|<\/section|$)/gi;let m;while((m=re.exec(html))){const title=decode(m[2]);if(!/Estudo Técnico|Atualização Bienal/i.test(title))continue;const tail=decode(m[3]);const dateMatch=tail.match(/Documento disponibilizado em\s*(\d{2}\/\d{2}\/\d{4})/i);items.push({title,url:new URL(m[1],DETRANS_URL).href,date:dateMatch?dateMatch[1]:null,year:dateMatch?Number(dateMatch[1].slice(-4)):null,road:extractRoad(title),speedKmh:extractSpeed(title)})}const unique=[];const seen=new Set();for(const x of items){if(!seen.has(x.url)){seen.add(x.url);unique.push(x)}}const years={};for(const x of unique){const y=x.year||'indefinido';years[y]=(years[y]||0)+1}const corridors={};for(const x of unique){if(x.road&&x.road!=='Outros')corridors[x.road]=(corridors[x.road]||0)+1}const ranking=Object.entries(corridors).map(([road,count])=>({road,count})).sort((a,b)=>b.count-a.count).map((x,i)=>({...x,rank:i+1}));const latestYear=Math.max(...unique.map(x=>x.year||0));const latestDate=unique.map(x=>x.date).filter(Boolean).sort((a,b)=>b.split('/').reverse().join('').localeCompare(a.split('/').reverse().join('')))[0]||null;return{source:'DETRANS',sourceName:'Departamento de Trânsito de Joinville',municipality:'Joinville',retrievedAt:new Date().toISOString(),latestCompleteYear:latestYear||null,latestPublicationDate:latestDate?latestDate.split('/').reverse().join('-'):null,methodology:'Inventário somente leitura dos estudos técnicos publicados oficialmente pelo DETRANS. O ranking representa quantidade de estudos por corredor, não acidentes. Não se calcula variação 2024→2025 quando a fonte não fornece série anual homogênea.',urls:{publication:DETRANS_URL},summary:{totalOccurrences:null,totalStudies:unique.length,studiesByYear:years},corridors:ranking,documents:unique.slice(0,120)}}
 async function loadDetrans(force=false){if(!force&&cacheGet('detrans')&&cache.detrans.expiresAt>Date.now())return cache.detrans.data;const data=parseDetrans(await fetchText(DETRANS_URL));cacheSet('detrans',data);return data}
 async function getJson(url){const r=await withTimeout(fetch(url,{headers:{'User-Agent':'SIGES-Escola-Segura/3.6 simgeo-reader'}}));if(!r.ok)throw new Error(`SIMGeo respondeu HTTP ${r.status}`);return r.json()}
-async function loadSimgeo(force=false){if(!force&&cacheGet('simgeo')&&cache.simgeo.expiresAt>Date.now())return cache.simgeo.data;const monthQueries=Array.from({length:12},(_,i)=>{const m=String(i+1).padStart(2,'0'),next=String(i+2).padStart(2,'0');const end=i===11?'2026-01-01':`2025-${next}-01`;return getJson(`${SIMGEO_ACCIDENTS}/query?where=${encodeURIComponent(`data >= DATE '2025-${m}-01' AND data < DATE '${end}'`)}&returnCountOnly=true&f=json`).then(x=>Number(x.count)||0)});const [schools,layersJson,cycleJson,accidentYear2025,...accidentMonths2025]=await Promise.all([getJson(`${SIMGEO_SCHOOLS}/query?where=1%3D1&returnCountOnly=true&f=json`),getJson(`${SIMGEO_ROOT}/planejamento/MapServer/layers?f=json`),getJson(`${SIMGEO_CYCLE}/query?where=1%3D1&outFields=nome_logra,ciclo,extensao,categoria&returnGeometry=false&resultRecordCount=2000&f=json`),getJson(`${SIMGEO_ACCIDENTS}/query?where=ano%3D2025&returnCountOnly=true&f=json`),...monthQueries]);const layers=(layersJson.layers||[]).map(x=>({id:x.id,name:x.name,type:x.type}));const cycleCorridors=(cycleJson.features||[]).map(f=>f.attributes||{}).filter(x=>clean(x.nome_logra));const data={source:'SIMGEO',sourceName:'Sistema de Informações Municipais Georreferenciadas',municipality:'Joinville',retrievedAt:new Date().toISOString(),latestCompleteYear:null,latestPublicationDate:null,methodology:'Leitura somente consulta das camadas públicas do SIMGeo. Quantidades são inventário de dados, não ocorrência de sinistros. A camada de Unidades Escolares inclui CEIs, escolas municipais, escolas estaduais, escolas conveniadas e escolas municipais rurais conforme o campo categoria da fonte oficial. O total de unidades não representa o universo de escolas analisadas pelo SIGES. A infraestrutura cicloviária somente é atribuída quando há correspondência nominal com o logradouro; nenhuma ausência é convertida em negativa.',urls:{portal:SIMGEO_URL,rest:SIMGEO_ROOT,schools:SIMGEO_SCHOOLS,roads:SIMGEO_ROADS,cycle:SIMGEO_CYCLE},summary:{totalOccurrences:null,schoolUnits:schools.count==null?null:`${schools.count} (todas as categorias: municipais, estaduais, conveniadas e rurais/CEIs)`,schoolUnitsCount:schools.count??null,schoolUnitsScope:'CEIs + municipais + estaduais + conveniadas + rurais',planningLayers:layers.length,cycleSegments:cycleCorridors.length,accidents2025Count:Number(accidentYear2025.count)||0,accidents2025Monthly:accidentMonths2025.map((count,i)=>({month:i+1,count}))},corridors:cycleCorridors,layers,privacy:'Somente metadados e contagens agregadas; nenhuma alteração de camada é realizada pelo SIGES.'};cacheSet('simgeo',data);return data}
+async function loadSimgeo(force=false){
+  if(!force&&cacheGet('simgeo')&&cache.simgeo.expiresAt>Date.now())return cache.simgeo.data;
+  const monthQueries=Array.from({length:12},(_,i)=>{
+    const m=String(i+1).padStart(2,'0'),next=String(i+2).padStart(2,'0');
+    const endDate=i===11?'2026-01-01':`2025-${next}-01`;
+    const where=encodeURIComponent(`data >= DATE '2025-${m}-01' AND data < DATE '${endDate}'`);
+    return getJson(`${SIMGEO_ACCIDENTS}/query?where=${where}&returnCountOnly=true&f=json`);
+  });
+  const results=await Promise.allSettled([
+    getJson(`${SIMGEO_SCHOOLS}/query?where=1%3D1&returnCountOnly=true&f=json`),
+    getJson(`${SIMGEO_ROOT}/planejamento/MapServer/layers?f=json`),
+    getJson(`${SIMGEO_CYCLE}/query?where=1%3D1&outFields=nome_logra,ciclo,extensao,categoria&returnGeometry=false&resultRecordCount=2000&f=json`),
+    getJson(`${SIMGEO_ACCIDENTS}/query?where=ano%3D2025&returnCountOnly=true&f=json`),
+    ...monthQueries
+  ]);
+  const value=(i,fallback)=>results[i]?.status==='fulfilled'?results[i].value:fallback;
+  const schools=value(0,{count:null}),layersJson=value(1,{layers:[]}),cycleJson=value(2,{features:[]}),accidentYear2025=value(3,{count:null});
+  const monthResults=results.slice(4);
+  const layers=(layersJson.layers||[]).map(x=>({id:x.id,name:x.name,type:x.type}));
+  const cycleCorridors=(cycleJson.features||[]).map(f=>f.attributes||{}).filter(x=>clean(x.nome_logra));
+  const monthly=monthResults.map((r,i)=>({month:i+1,count:r.status==='fulfilled'?Number(r.value.count)||0:null,status:r.status==='fulfilled'?'ok':'unavailable'}));
+  const successful=results.filter(r=>r.status==='fulfilled').length;
+  const failed=results.length-successful;
+  const data={
+    source:'SIMGEO',
+    sourceName:'Sistema de Informações Municipais Georreferenciadas',
+    municipality:'Joinville',
+    retrievedAt:new Date().toISOString(),
+    latestCompleteYear:2025,
+    latestPublicationDate:null,
+    sourceStatus:failed===0?'online':successful>0?'partial':'offline',
+    queryHealth:{requested:results.length,succeeded:successful,failed},
+    methodology:'Leitura somente consulta das camadas públicas do SIMGeo. Quantidades são inventário de dados, não ocorrência de sinistros. A camada de Unidades Escolares inclui CEIs, escolas municipais, escolas estaduais, escolas conveniadas e escolas municipais rurais conforme o campo categoria da fonte oficial. A infraestrutura cicloviária somente é atribuída quando há correspondência nominal com o logradouro.',
+    urls:{portal:SIMGEO_URL,rest:SIMGEO_ROOT,schools:SIMGEO_SCHOOLS,roads:SIMGEO_ROADS,cycle:SIMGEO_CYCLE,accidents:SIMGEO_ACCIDENTS},
+    summary:{
+      totalOccurrences:null,
+      schoolUnits:schools.count==null?null:`${schools.count} (todas as categorias: municipais, estaduais, conveniadas e rurais/CEIs)`,
+      schoolUnitsCount:schools.count??null,
+      schoolUnitsScope:'CEIs + municipais + estaduais + conveniadas + rurais',
+      planningLayers:layers.length,
+      cycleSegments:cycleCorridors.length,
+      accidents2025Count:accidentYear2025.count==null?null:Number(accidentYear2025.count)||0,
+      accidents2025Monthly:monthly
+    },
+    corridors:cycleCorridors,
+    layers,
+    privacy:'Somente metadados e contagens agregadas; nenhuma alteração de camada é realizada pelo SIGES.'
+  };
+  if(successful>0)cacheSet('simgeo',data);
+  else if(cacheGet('simgeo'))return {...cache.simgeo.data,sourceStatus:'stale',retrievedAt:new Date().toISOString()};
+  return data;
+}
 module.exports=function buildPublicSourcesRouter(){const router=express.Router();router.get('/health',(req,res)=>res.json({ok:true,source:'public-sources',mode:'read-only',cacheTtlMs:CACHE_TTL}));
 router.get('/status',(req,res)=>res.json({ok:true,retrievedAt:new Date().toISOString(),sources:Object.fromEntries(['cbvj','detrans','simgeo'].map(key=>[key,{cached:Boolean(cacheGet(key)),expiresAt:cache[key]?.expiresAt||null,lastSuccessAt:cache[key]?.lastSuccessAt||null,status:cacheGet(key)?(cache[key].expiresAt>Date.now()?'cached':'stale'):'not_loaded'}]))}));router.get('/cbvj',async(req,res)=>{try{res.json(await loadCbvj(req.query.refresh==='1'))}catch(error){res.status(502).json({error:'Não foi possível consultar o CBVJ agora.',detail:error.message,source:'CBVJ',readOnly:true})}});router.get('/detrans',async(req,res)=>{try{res.json(await loadDetrans(req.query.refresh==='1'))}catch(error){res.status(502).json({error:'Não foi possível consultar o DETRANS agora.',detail:error.message,source:'DETRANS',readOnly:true})}});router.get('/detrans-correlations',async(req,res)=>{try{res.json(await buildDetransSpatial())}catch(error){res.status(502).json({error:'Não foi possível calcular as correspondências espaciais DETRANS/SIMGEO agora.',detail:error.message,source:'DETRANS+SIMGEO',readOnly:true})}});router.get('/simgeo',async(req,res)=>{try{res.json(await loadSimgeo(req.query.refresh==='1'))}catch(error){res.status(502).json({error:'Não foi possível consultar o SIMGeo agora.',detail:error.message,source:'SIMGEO',readOnly:true})}});return router}
 module.exports.constants={CBVJ_2025_URL,CBVJ_2024_URL,DETRANS_URL,SIMGEO_URL,SIMGEO_ROOT,SIMGEO_SCHOOLS,SIMGEO_ROADS,SIMGEO_CYCLE,SIMGEO_ACCIDENTS};
