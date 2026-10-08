@@ -35,7 +35,7 @@ function Auth({role,onDone}){
     setBusy(true);
     try{
       if(mode==='login'){
-        const x=await api('/login',{method:'POST',body:JSON.stringify({email:form.email,password:form.password})});
+        const x=await api('/login',{method:'POST',body:JSON.stringify({token:form.token,password:form.password})});
         localStorage.setItem('siges_portal_token',x.token);
         localStorage.setItem('siges_portal_user',JSON.stringify(x.user));
         onDone(x.user);
@@ -49,23 +49,17 @@ function Auth({role,onDone}){
           body:JSON.stringify({
             role,
             name:form.name,
-            email:role==='aluno'&&validationMethod==='school'?'':form.email,
+            email:form.email,
             password:form.password,
             profile
           })
         });
 
-        if(x.schoolValidationRequired){
-          setAccessCode(x.accessCode||'');
-          setMessage(x.message||'Cadastro recebido. Aguarde a validação da escola.');
-          setMode('login');
-          setForm({});
-          setPendingEmail('');
-        }else{
-          setMessage(x.message||'Cadastro realizado. Verifique seu e-mail.');
-          setMode('login');
-          setPendingEmail(form.email||'');
-        }
+        setAccessCode(x.accessToken||x.accessCode||'');
+        setMessage(x.message||'Cadastro realizado.');
+        setMode('login');
+        setForm({token:x.accessToken||x.accessCode||'',password:form.password||''});
+        setPendingEmail(x.emailVerificationSent?form.email||'':'');
       }
     }catch(e){
       setError(e.message);
@@ -125,14 +119,13 @@ function Auth({role,onDone}){
       {message&&<div className="portal-ok">{message}</div>}
 
       {accessCode&&<div className="portal-panel" style={{margin:'12px 0',textAlign:'left'}}>
-        <strong>🔐 Código de acesso do aluno</strong>
-        <div style={{fontSize:24,fontWeight:900,letterSpacing:2,margin:'8px 0'}}>{accessCode}</div>
-        <p style={{margin:0}}>Guarde este código e a senha criada no cadastro. A escola precisa validar seu vínculo antes do primeiro acesso.</p>
+        <strong>🔐 Token de acesso</strong>
+        <div style={{fontSize:22,fontWeight:900,letterSpacing:1,margin:'8px 0',wordBreak:'break-all'}}>{accessCode}</div>
+        <p style={{margin:0}}>Guarde este token e a senha criada no cadastro. O token será usado para entrar na Área do Aluno.</p>
       </div>}
 
-      {mode==='register'&&role==='aluno'&&<div className="auth-tabs">
-        <button type="button" className={validationMethod==='email'?'on':''} onClick={()=>setValidationMethod('email')}>📧 Validar por e-mail</button>
-        <button type="button" className={validationMethod==='school'?'on':''} onClick={()=>setValidationMethod('school')}>🏫 Validar pela escola</button>
+      {mode==='register'&&role==='aluno'&&<div className="portal-note" style={{textAlign:'left',marginBottom:10}}>
+        O sistema gera um token individual de acesso. A validação pela escola será solicitada somente quando o cadastro for identificado como suspeito ou quando não houver e-mail para confirmação.
       </div>}
 
       <form onSubmit={submit}>
@@ -173,18 +166,14 @@ function Auth({role,onDone}){
               </div>}
         </>}
 
-        {mode==='register'&&role==='aluno'&&validationMethod==='school'&&<div className="portal-note" style={{textAlign:'left',marginBottom:10}}>
-          Não tem e-mail? Tudo bem. O vínculo será confirmado pela escola com base nos dados escolares informados. Após a aprovação, entre com o código de acesso e a senha.
-        </div>}
-
-        <input required={mode==='login'||validationMethod==='email'||role!=='aluno'} type={mode==='login'?'text':'email'} placeholder={mode==='login'?'E-mail ou código de acesso':'E-mail (opcional na validação pela escola)'} value={form.email||''} onChange={e=>set('email',e.target.value)}/>
+        <input required={mode==='login'} type={mode==='login'?'text':'email'} placeholder={mode==='login'?'Token de acesso':'E-mail (opcional)'} value={mode==='login'?(form.token||''):(form.email||'')} onChange={e=>set(mode==='login'?'token':'email',e.target.value)}/>
         <input required minLength="6" type="password" placeholder="Senha" value={form.password||''} onChange={e=>set('password',e.target.value)}/>
         <button className="portal-primary" disabled={busy}>{busy?'Processando…':mode==='login'?'Entrar':'Criar cadastro'}</button>
       </form>
 
       {mode==='login'&&pendingEmail&&<button type="button" className="portal-secondary" onClick={resend} disabled={busy}>✉️ Reenviar confirmação para {pendingEmail}</button>}
-      {mode==='login'&&role==='aluno'&&/e-mail|email/i.test(error)&&form.email&&form.password&&<button type="button" className="portal-secondary" onClick={switchToSchoolValidation} disabled={busy}>🏫 Não consigo usar o e-mail — validar pela escola</button>}
-      <div className="portal-note">Para alunos, há duas formas de validação: e-mail ou confirmação do vínculo pela escola. A escola ou a Administração SIGES libera o acesso somente após validar o vínculo.</div>
+
+      <div className="portal-note">{mode==='login'?'Acesso protegido por token individual + senha. Cadastros classificados como suspeitos aguardam validação do vínculo pela escola.':'O token será usado no próximo acesso. Cadastros sem e-mail ou classificados como suspeitos passam por validação escolar adicional.'}</div>
     </div>
   </div>
 }
