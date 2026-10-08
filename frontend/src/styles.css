@@ -72,3 +72,13 @@
 .activity-icon{width:30px;height:30px;border-radius:8px;background:#f0f5f7;color:#567581;display:grid;place-items:center;flex:0 0 auto}.activity-body{flex:1;min-width:0}.activity-body b{display:block;font-size:10px;color:#284555}.activity-body span{display:block;font-size:9px;color:#87969e;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.activity-item time{font-size:8px;color:#9aa6ad;white-space:nowrap}
 @media(max-width:1050px){.portal-kpis{grid-template-columns:repeat(2,1fr)}.school-portal-main-grid{grid-template-columns:1fr}.portal-status-panel{min-height:auto}}
 @media(max-width:650px){.school-portal-head{display:block}.portal-head-actions{margin-top:12px}.portal-kpis{grid-template-columns:1fr 1fr}.material-form{grid-template-columns:1fr}.material-wide,.material-submit{grid-column:1}.material-item{align-items:flex-start}.material-item-actions{flex-direction:column}.activity-item time{display:none}}
+
+/* PORTAL ESCOLA SEGURA — KPIs compactos */
+.school-portal-page .portal-kpis{gap:10px;margin-bottom:14px}
+.school-portal-page .portal-kpi{min-height:96px;height:96px;padding:12px 14px;border-radius:12px}
+.school-portal-page .portal-kpi:after{width:3px}
+.school-portal-page .portal-kpi-top{font-size:9px}
+.school-portal-page .portal-kpi strong{font-size:24px;margin:11px 0 4px}
+.school-portal-page .portal-kpi small{font-size:8px}
+@media(max-width:1050px){.school-portal-page .portal-kpi{min-height:90px;height:90px;padding:11px 13px}}
+@media(max-width:650px){.school-portal-page .portal-kpi{min-height:84px;height:84px;padding:10px 12px}.school-portal-page .portal-kpi strong{font-size:22px;margin:8px 0 3px}}
