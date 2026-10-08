@@ -82,3 +82,9 @@
 .school-portal-page .portal-kpi small{font-size:8px}
 @media(max-width:1050px){.school-portal-page .portal-kpi{min-height:90px;height:90px;padding:11px 13px}}
 @media(max-width:650px){.school-portal-page .portal-kpi{min-height:84px;height:84px;padding:10px 12px}.school-portal-page .portal-kpi strong{font-size:22px;margin:8px 0 3px}}
+
+/* Centro de Inteligência — fontes resilientes */
+.intelligence-source-strip{display:flex;align-items:center;gap:14px;padding:12px 14px;margin:14px 0;border:1px solid #dce5e9;border-radius:12px;background:#fff;box-shadow:0 4px 14px rgba(24,43,57,.04)}
+.intelligence-source-strip>div:first-child{min-width:150px;display:flex;flex-direction:column;gap:2px}.intelligence-source-strip>div:first-child small{font-size:9px;letter-spacing:.08em;color:#74828a}.intelligence-source-strip>div:first-child b{font-size:13px;color:#18324a}
+.source-health-item{display:flex;align-items:center;gap:7px;padding:5px 9px;border-left:1px solid #e7edef}.source-health-item>div{display:flex;flex-direction:column;gap:1px}.source-health-item b{font-size:11px}.source-health-item small{font-size:9px;color:#71818a;text-transform:uppercase}.source-health-dot{width:8px;height:8px;border-radius:50%;display:block}.source-health-dot.online{background:#159447}.source-health-dot.partial{background:#d89416}.source-health-dot.offline{background:#c23b3b}.intelligence-source-strip>button{margin-left:auto}
+@media(max-width:900px){.intelligence-source-strip{flex-wrap:wrap}.intelligence-source-strip>div:first-child{width:100%}.source-health-item{border-left:0}.intelligence-source-strip>button{margin-left:0}}
