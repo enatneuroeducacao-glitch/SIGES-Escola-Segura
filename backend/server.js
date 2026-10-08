@@ -13,6 +13,36 @@ const PORT=Number(process.env.PORT)||3001;
 const SECRET=process.env.SIGES_SECRET||'SIGES_LOCAL_ONLY_CHANGE_BEFORE_PRODUCTION';
 const DB=path.join(__dirname,'data','db.json');
 
+function ensureValidationTestUsers(){
+  if(process.env.SIGES_TEST_USERS_ENABLED!=='true') return;
+  const db=read();
+  const schoolToken=String(process.env.SIGES_TEST_SCHOOL_TOKEN||'').trim(), schoolPassword=String(process.env.SIGES_TEST_SCHOOL_PASSWORD||'').trim();
+  const studentToken=String(process.env.SIGES_TEST_STUDENT_TOKEN||'').trim(), studentPassword=String(process.env.SIGES_TEST_STUDENT_PASSWORD||'').trim();
+  if(!schoolToken||!schoolPassword||!studentToken||!studentPassword) return;
+  const schoolUserId='usr_test_school_validation', studentUserId='usr_test_student_validation';
+  let school=db.schools.find(x=>x.id==='sch_test_validation');
+  if(!school){
+    const catalog=sigesSchoolCatalog(db);
+    const selected=catalog[0]||{id:'sch_test_validation',name:'Escola Segura — Ambiente de Validação',municipality:'Joinville',uf:'SC',bairro:'',address:'',category:'Teste'};
+    school={id:'sch_test_validation',sigesId:selected.id,name:selected.name,inep:'TESTE',municipality:selected.municipality||'Joinville',uf:selected.uf||'SC',bairro:selected.bairro||'',address:selected.address||'',category:selected.category||'Teste',source:'SIGES',managerName:'Usuário de Validação',managerEmail:'',managerUserId:schoolUserId,status:'active',createdAt:new Date().toISOString(),createdBy:'bootstrap'};
+    db.schools.push(school);
+  }else{school.status='active';school.managerUserId=schoolUserId;}
+  let su=db.users.find(x=>x.id===schoolUserId);
+  if(!su) su={id:schoolUserId,role:'escola',name:'Usuário Escola — Validação',email:'',username:'TEST-SCHOOL',accessTokenHash:crypto.createHash('sha256').update(schoolToken).digest('hex'),accessTokenIssuedAt:new Date().toISOString(),passwordHash:bcrypt.hashSync(schoolPassword,10),status:'active',authMethod:'token',profile:{schoolId:school.id,schoolName:school.name},createdAt:new Date().toISOString()};
+  else {su.accessTokenHash=crypto.createHash('sha256').update(schoolToken).digest('hex');su.passwordHash=bcrypt.hashSync(schoolPassword,10);su.status='active';su.profile={...(su.profile||{}),schoolId:school.id,schoolName:school.name};}
+  if(!db.users.includes(su)) db.users.push(su);
+  school.managerUserId=su.id;
+  let student=db.students.find(x=>x.id==='std_test_validation');
+  if(!student) student={id:'std_test_validation',userId:studentUserId,name:'Aluno de Validação',birthDate:'2012-05-10',schoolId:school.id,grade:'8º ano',className:'Turma de Validação',shift:'Matutino',responsibleName:'Responsável de Teste',responsibleContact:'',status:'pending',isGuide:false,guideCertified:false,createdAt:new Date().toISOString(),createdBy:'bootstrap'};
+  else {student.schoolId=school.id;student.status='pending';}
+  if(!db.students.includes(student)) db.students.push(student);
+  let stu=db.users.find(x=>x.id===studentUserId);
+  if(!stu) stu={id:studentUserId,role:'aluno',name:'Aluno de Validação',email:'',username:'TEST-STUDENT',accessTokenHash:crypto.createHash('sha256').update(studentToken).digest('hex'),accessTokenIssuedAt:new Date().toISOString(),passwordHash:bcrypt.hashSync(studentPassword,10),status:'pending_school',emailVerifiedAt:null,authMethod:'school_validation',requiresSchoolValidation:true,riskScore:1,riskFlags:['teste_validacao_escolar'],validationReason:'Cadastro de teste para validação pela escola',profile:{birthDate:'2012-05-10',grade:'8º ano',className:'Turma de Validação',shift:'Matutino',schoolId:school.id,studentId:student.id},createdAt:new Date().toISOString()};
+  else {stu.accessTokenHash=crypto.createHash('sha256').update(studentToken).digest('hex');stu.passwordHash=bcrypt.hashSync(studentPassword,10);stu.status='pending_school';stu.authMethod='school_validation';stu.requiresSchoolValidation=true;stu.profile={...(stu.profile||{}),schoolId:school.id,studentId:student.id};}
+  if(!db.users.includes(stu)) db.users.push(stu);
+  audit(db,'TEST_USERS_BOOTSTRAPPED',null,{schoolUserId,studentUserId});
+  write(db);
+}
 function ensureAdmin(){
   const db=read();
   if(!db.users.some(u=>u.role==='enat' && (u.username==='admin' || u.email==='admin'))){
@@ -565,4 +595,4 @@ app.get('/api/school/students',auth,(req,res)=>{if(req.user.role!=='escola')retu
 app.post('/api/forgot',(req,res)=>{const email=String(req.body.email||'').trim().toLowerCase(),db=read(),u=db.users.find(x=>x.email===email);if(!u)return res.json({message:'Se a conta existir, a recuperação será processada.'});const t='reset_'+Date.now()+'_'+Math.random().toString(36).slice(2);db.passwordResets.push({token:t,userId:u.id,expiresAt:Date.now()+1800000});audit(db,'PASSWORD_RESET_REQUEST',u.id);write(db);res.json({message:'Solicitação registrada.',devToken:t});});
 app.post('/api/reset',async(req,res)=>{const{token,password}=req.body;if(!token||!password||password.length<6)return res.status(400).json({error:'Token e nova senha são obrigatórios.'});const db=read(),r=db.passwordResets.find(x=>x.token===token&&x.expiresAt>Date.now());if(!r)return res.status(400).json({error:'Token inválido ou expirado.'});const u=db.users.find(x=>x.id===r.userId);u.passwordHash=await bcrypt.hash(password,10);db.passwordResets=db.passwordResets.filter(x=>x.token!==token);audit(db,'PASSWORD_RESET',u.id);write(db);res.json({message:'Senha redefinida com sucesso.'});});
 
-app.listen(PORT,'0.0.0.0',()=>{ensureAdmin();console.log('SIGES API local: http://localhost:'+PORT);});
+app.listen(PORT,'0.0.0.0',()=>{ensureAdmin();ensureValidationTestUsers();console.log('SIGES API local: http://localhost:'+PORT);});
