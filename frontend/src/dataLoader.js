@@ -76,6 +76,8 @@ function enrich(base,sources){
   const det=sources.detrans?.corridors||[];
   const docs=sources.detrans?.documents||[];
   const cycles=sources.simgeo?.corridors||[];
+  const simgeo2025=sources.simgeo?.corridors2025||[];
+  const simgeo2026=sources.simgeo?.corridors2026||[];
   const match=(a,b)=>corridorMatch(a,b);
   const matchedCycle=key=>cycles.filter(r=>match(key,r.nome_logra));
   const matchedDetransDoc=key=>docs.find(r=>match(key,r.road)&&Number.isFinite(Number(r.speedKmh)));
@@ -83,17 +85,21 @@ function enrich(base,sources){
     const key=firstDefined(x['Corredor normalizado'],x.Corredor,x.Via,x.Endereço)||'';
     const staticCorridor=findSchoolCorridor(x,base.sinistros);
     const liveCorridor=cb.find(r=>match(key,r.road)||match(key,r.road2025||r.road));
-    const c=liveCorridor||staticCorridor;
+    const simgeoCorridor2025=simgeo2025.find(r=>match(key,r.road));
+    const simgeoCorridor2026=simgeo2026.find(r=>match(key,r.road));
+    const c=simgeoCorridor2026||simgeoCorridor2025||liveCorridor||staticCorridor;
     const d=det.find(r=>match(key,r.road));
     const doc=matchedDetransDoc(key);
     const cyc=matchedCycle(key);
     const next={...x};
 
-    const accident2025=firstDefined(liveCorridor?.value2025,x['Acidentes corredor 2025']);
+    const accident2025=firstDefined(simgeoCorridor2025?.count,liveCorridor?.value2025,x['Acidentes corredor 2025']);
+    const accident2026=firstDefined(simgeoCorridor2026?.count,x['Acidentes corredor 2026']);
     const accident2024=firstDefined(liveCorridor?.value2024,staticCorridor?.['Acidentes 2024'],x['Acidentes corredor 2024']);
     const accident2023=firstDefined(liveCorridor?.value2023,staticCorridor?.['Acidentes 2023'],x['Acidentes corredor 2023']);
     const rank2024=firstDefined(liveCorridor?.rank2024,staticCorridor?.['Rank 2024'],x['Ranking acidentes 2024']);
     const variation=firstDefined(liveCorridor?.variation2024to2025,x['Variação acidentes 2024-2025']);
+    const variation2025to2026=Number.isFinite(Number(accident2025))&&Number.isFinite(Number(accident2026))&&Number(accident2025)!==0?Number((((Number(accident2026)-Number(accident2025))/Number(accident2025))*100).toFixed(2)):null;
     const studies=firstDefined(d?.count,x['Estudos DETRANS']);
     const studyYear=firstDefined(doc?.year,x['Ano estudo DETRANS']);
 
@@ -104,6 +110,12 @@ function enrich(base,sources){
       next['Acidentes corredor 2025']=accident2025;
       if(isMissing(x['Acidentes 2025']))next['Acidentes 2025']=accident2025;
     }
+    if(!isMissing(accident2026)){
+      next['Acidentes corredor 2026']=accident2026;
+      next['Acidentes 2026']=accident2026;
+      next['Fonte acidentes 2026']='SIMGEO — camada pública de acidentes com vítimas';
+    }
+    if(variation2025to2026!==null)next['Variação acidentes 2025-2026']=variation2025to2026;
     if(!isMissing(variation))next['Variação acidentes 2024-2025']=variation;
     if(!isMissing(studies))next['Estudos DETRANS']=studies;
     if(!isMissing(studyYear))next['Ano estudo DETRANS']=studyYear;
@@ -112,17 +124,29 @@ function enrich(base,sources){
     if(isMissing(x['Infraestrutura cicloviária'])&&cyc.length)next['Infraestrutura cicloviária']=`Presente — ${cyc.length} segmento(s) identificado(s) no SIMGeo`;
 
     const corridorFields=dossierCorridorFields(x,staticCorridor||liveCorridor,liveCorridor);
+    if(!isMissing(accident2026)){
+      corridorFields['Acidentes corredor 2026']=accident2026;
+      corridorFields['Fonte acidentes 2026']='SIMGEO — camada pública de acidentes com vítimas';
+    }
     Object.entries(corridorFields).forEach(([k,v])=>{if(isMissing(next[k])&&!isMissing(v))next[k]=v});
     return next;
   });
 
   const sinistros=base.sinistros.map(x=>{
-    const c=cb.find(r=>match(x.Via||x.Corredor||'',r.road)||match(x.Via||x.Corredor||'',r.road2025||r.road));
+    const key=x.Via||x.Corredor||'';
+    const c=cb.find(r=>match(key,r.road)||match(key,r.road2025||r.road));
+    const s25=simgeo2025.find(r=>match(key,r.road));
+    const s26=simgeo2026.find(r=>match(key,r.road));
     const next={...x};
-    const accident2025=firstDefined(c?.value2025,x['Acidentes 2025']);
+    const accident2025=firstDefined(s25?.count,c?.value2025,x['Acidentes 2025']);
+    const accident2026=firstDefined(s26?.count,x['Acidentes 2026']);
     const variation=firstDefined(c?.variation2024to2025,x['Variação 2024-2025']);
+    const variation2025to2026=Number.isFinite(Number(accident2025))&&Number.isFinite(Number(accident2026))&&Number(accident2025)!==0?Number((((Number(accident2026)-Number(accident2025))/Number(accident2025))*100).toFixed(2)):null;
     if(!isMissing(accident2025))next['Acidentes 2025']=accident2025;
+    if(!isMissing(accident2026))next['Acidentes 2026']=accident2026;
+    if(variation2025to2026!==null)next['Variação 2025-2026']=variation2025to2026;
     if(!isMissing(variation))next['Variação 2024-2025']=variation;
+    if(!isMissing(accident2026))next['Fonte 2026']='SIMGEO — dados consultados pelo SIGES';
     return next;
   });
 
