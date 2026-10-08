@@ -450,7 +450,7 @@ app.get('/api/admin/school-portal',auth,(req,res)=>{
 app.get('/api/admin/materials',auth,(req,res)=>{
   if(!canManageSchoolPortal(req.user))return res.status(403).json({error:'Acesso restrito à Administração SIGES.'});
   const db=read();
-  res.json({materials:db.materials.slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')).map(materialView)});
+  res.json({materials:db.materials.slice().sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).map(materialView)});
 });
 
 app.post('/api/admin/materials',auth,(req,res)=>{
@@ -500,25 +500,27 @@ app.delete('/api/admin/materials/:id',auth,(req,res)=>{
 
 function materialVisibleToStudent(m,student){
   if(m.status!=='published'||m.audience==='escolas')return false;
-  return m.audience==='todos'||m.audience==='alunos'||(Array.isArray(m.schoolIds)&&m.schoolIds.includes(student.schoolId));
+  if(Array.isArray(m.schoolIds)&&m.schoolIds.length&&!m.schoolIds.includes(student.schoolId))return false;
+  return m.audience==='todos'||m.audience==='alunos';
 }
 function materialVisibleToSchool(m,school){
   if(m.status!=='published'||m.audience==='alunos')return false;
-  return m.audience==='todos'||m.audience==='escolas'||(Array.isArray(m.schoolIds)&&m.schoolIds.includes(school.id));
+  if(Array.isArray(m.schoolIds)&&m.schoolIds.length&&!m.schoolIds.includes(school.id))return false;
+  return m.audience==='todos'||m.audience==='escolas';
 }
 
 app.get('/api/student/materials',auth,(req,res)=>{
   if(!canAccessStudent(req.user))return res.status(403).json({error:'Área exclusiva do aluno.'});
   const db=read(),student=studentForUser(db,req.user);
   if(!student)return res.status(404).json({error:'Aluno não localizado.'});
-  res.json({materials:db.materials.filter(m=>materialVisibleToStudent(m,student)).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')).map(materialView)});
+  res.json({materials:db.materials.filter(m=>materialVisibleToStudent(m,student)).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).map(materialView)});
 });
 
 app.get('/api/school/materials',auth,(req,res)=>{
   if(req.user.role!=='escola')return res.status(403).json({error:'Área exclusiva da escola.'});
   const db=read(),school=schoolForUser(db,req.user);
   if(!school)return res.status(404).json({error:'Escola não vinculada.'});
-  res.json({materials:db.materials.filter(m=>materialVisibleToSchool(m,school)).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||'')).map(materialView)});
+  res.json({materials:db.materials.filter(m=>materialVisibleToSchool(m,school)).sort((a,b)=>String(b.updatedAt||b.createdAt||'').localeCompare(String(a.updatedAt||a.createdAt||''))).map(materialView)});
 });
 
 function canManageSchools(user){return ['enat','escola','prefeitura','educacao'].includes(user.role)}
