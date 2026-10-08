@@ -27,38 +27,38 @@ jobs:
           print('SIZE=',r.get('size'))
           open('/tmp/renaest-url','w').write(r['url'])
           PY
-      - name: Baixar RENAEST 04-2026 em blocos
+      - name: Baixar RENAEST 04-2026 em blocos paralelos
         shell: bash
         run: |
           set -euo pipefail
           url="$(cat /tmp/renaest-url)"
           total="$(python - <<'PY'
-          import json, urllib.request, re
+          import json, urllib.request
           pkg=json.load(urllib.request.urlopen('https://dados.transportes.gov.br/api/3/action/package_show?id=renaest', timeout=60))['result']
           r=next(r for r in pkg['resources'] if r.get('id')=='ff1cfdec-1f90-46c5-a900-fc5943c99792')
           print(r['size'])
           PY
           )"
           chunk=$((20*1024*1024))
-          rm -f /tmp/renaest.zip
-          start=0
-          part=0
-          while [ "$start" -lt "$total" ]; do
-            end=$((start+chunk-1))
-            if [ "$end" -ge "$total" ]; then end=$((total-1)); fi
-            echo "Baixando bytes $start-$end de $total"
-            curl -L --fail --retry 5 --retry-delay 2 -H "Range: bytes=$start-$end" -o "/tmp/renaest.part.$part" "$url"
-            got=$(stat -c%s "/tmp/renaest.part.$part")
-            expected=$((end-start+1))
-            if [ "$got" -ne "$expected" ]; then
-              echo "Tamanho inesperado: got=$got expected=$expected"
-              exit 1
-            fi
-            cat "/tmp/renaest.part.$part" >> /tmp/renaest.zip
-            rm "/tmp/renaest.part.$part"
-            start=$((end+1))
-            part=$((part+1))
-          done
+          mkdir -p /tmp/renaest-parts
+          export url total chunk
+          python - <<'PY' > /tmp/renaest-ranges
+          import os
+          total=int(os.environ['total']); chunk=int(os.environ['chunk'])
+          for i,start in enumerate(range(0,total,chunk)):
+              end=min(total-1,start+chunk-1)
+              print(i,start,end,end-start+1)
+          PY
+          cat /tmp/renaest-ranges | xargs -n4 -P8 bash -c '
+            i="$0"; start="$1"; end="$2"; expected="$3"
+            echo "Baixando parte $i: $start-$end"
+            curl -L --fail --retry 5 --retry-delay 2 -H "Range: bytes=$start-$end" -o "/tmp/renaest-parts/$i.part" "$url"
+            got=$(stat -c%s "/tmp/renaest-parts/$i.part")
+            test "$got" -eq "$expected"
+          '
+          : > /tmp/renaest.zip
+          while read -r i start end expected; do cat "/tmp/renaest-parts/$i.part" >> /tmp/renaest.zip; done < /tmp/renaest-ranges
+          test "$(stat -c%s /tmp/renaest.zip)" -eq "$total"
           stat -c "%s bytes" /tmp/renaest.zip
       - name: Inspecionar ZIP
         shell: bash
