@@ -208,7 +208,7 @@ app.post('/api/login',async(req,res)=>{
   const db=read(),u=db.users.find(x=>x.email===identifier || String(x.username||'').toLowerCase()===identifier);
   if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'E-mail, código de acesso ou senha inválidos.'});
   if(u.status!=='active'){
-    const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu e-mail foi confirmado. O vínculo escolar ainda aguarda validação.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
+    const messages={pending_email:'Confirme seu e-mail para continuar.',pending_school:'Seu vínculo escolar ainda aguarda validação pela escola ou pela Administração SIGES.',pending_admin:'Seu e-mail foi confirmado. O acesso ainda aguarda validação administrativa.',pending:'Seu cadastro ainda aguarda validação do vínculo escolar.',rejected:'Este cadastro foi recusado. Entre em contato com o suporte.',blocked:'Esta conta está bloqueada.'};
     return res.status(403).json({code:u.status,error:messages[u.status]||'Esta conta ainda aguarda validação.',emailVerified:Boolean(u.emailVerifiedAt)});
   }
   audit(db,'LOGIN',u.id,{role:u.role});write(db);
