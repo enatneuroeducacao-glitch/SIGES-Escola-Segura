@@ -45,12 +45,26 @@ function ensureValidationTestUsers(){
 }
 function ensureAdmin(){
   const db=read();
-  if(!db.users.some(u=>u.role==='enat' && (u.username==='admin' || u.email==='admin'))){
-    const u={id:'usr_admin_local',role:'enat',username:'admin',name:'Administrador ENAT',email:'admin',passwordHash:bcrypt.hashSync('admin',12),status:'active',profile:{institution:'ENAT'},createdAt:new Date().toISOString(),mustChangePassword:true};
+  const initialPassword=String(process.env.SIGES_ADMIN_INITIAL_PASSWORD||'SIGES2026');
+  let u=db.users.find(x=>x.role==='enat' && (x.username==='admin' || x.email==='admin'));
+  if(!u){
+    u={id:'usr_admin_local',role:'enat',username:'admin',name:'Administrador ENAT',email:'admin',passwordHash:bcrypt.hashSync(initialPassword,12),status:'active',profile:{institution:'ENAT'},createdAt:new Date().toISOString(),mustChangePassword:true};
     db.users.push(u);
     audit(db,'ADMIN_BOOTSTRAP',u.id,{username:'admin',temporaryPassword:true});
     write(db);
-    console.log('Administrador de teste criado: usuário admin / senha admin');
+    console.log('Administrador SIGES criado com credencial inicial configurada.');
+    return;
+  }
+  // A senha inicial só pode ser reaplicada enquanto a conta ainda exige troca.
+  // Depois que o administrador define sua senha definitiva, não sobrescrevemos a conta.
+  if(u.mustChangePassword===true){
+    const nextHash=bcrypt.hashSync(initialPassword,12);
+    if(!bcrypt.compareSync(initialPassword,u.passwordHash||'')){
+      u.passwordHash=nextHash;
+      u.status='active';
+      audit(db,'ADMIN_BOOTSTRAP_CREDENTIAL_SYNC',u.id,{username:'admin',temporaryPassword:true});
+      write(db);
+    }
   }
 }
 
