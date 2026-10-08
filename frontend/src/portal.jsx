@@ -6,7 +6,168 @@ const API=(import.meta.env.VITE_API_BASE||'/api').replace(/\/$/,'');
 const api=async(path,opts={})=>{const token=localStorage.getItem('siges_portal_token');const r=await fetch(API+path,{...opts,headers:{'Content-Type':'application/json',...(opts.headers||{}),...(token?{Authorization:'Bearer '+token}:{})}});const j=await r.json().catch(()=>({}));if(!r.ok)throw new Error(j.error||'Não foi possível concluir a operação.');return j;};
 const studentMenu=[['home','Início',Home],['learn','Aprender',BookOpen],['territory','Meu Entorno',Map],['observe','Eu Identifico',Eye],['claim','Minha Reivindicação',Flag],['journey','Minha Jornada',Trophy]];
 const schoolMenu=[['home','Dashboard',Home],['students','Alunos',Users],['learning','Aprendizagem',BookOpen],['claims','Reivindicações',Flag],['territory','Território',Map]];
-function Auth({role,onDone}){const[mode,setMode]=useState('login'),[form,setForm]=useState({}),[schools,setSchools]=useState([]),[schoolSearch,setSchoolSearch]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[pendingEmail,setPendingEmail]=useState('');useEffect(()=>{if(mode==='register')api('/public-schools').then(x=>setSchools(x.schools||[])).catch(()=>{})},[mode,role]);const filteredSchools=schools.filter(s=>{const q=schoolSearch.trim().toLocaleLowerCase('pt-BR');return !q||[s.name,s.bairro,s.address,s.municipality].join(' ').toLocaleLowerCase('pt-BR').includes(q)});const set=(k,v)=>setForm(f=>({...f,[k]:v}));const submit=async e=>{e.preventDefault();setError('');setMessage('');setBusy(true);try{if(mode==='login'){const x=await api('/login',{method:'POST',body:JSON.stringify({email:form.email,password:form.password})});localStorage.setItem('siges_portal_token',x.token);localStorage.setItem('siges_portal_user',JSON.stringify(x.user));onDone(x.user)}else{const profile=role==='aluno'?{schoolId:form.schoolId,birthDate:form.birthDate,grade:form.grade,className:form.className,shift:form.shift,responsibleName:form.responsibleName,responsibleContact:form.responsibleContact}:{sigesSchoolId:form.sigesSchoolId,schoolName:form.schoolName,inep:form.inep,municipality:form.municipality,uf:form.uf,bairro:form.bairro,address:form.address};const x=await api('/register',{method:'POST',body:JSON.stringify({role,name:form.name,email:form.email,password:form.password,profile})});setMessage(x.message||'Cadastro realizado. Verifique seu e-mail.');setMode('login');setPendingEmail(form.email||'')}}catch(e){setError(e.message);if(/e-mail|email|confirm/i.test(e.message))setPendingEmail(form.email||'')}finally{setBusy(false)}};const resend=async()=>{if(!pendingEmail)return;setBusy(true);try{const x=await api('/resend-verification',{method:'POST',body:JSON.stringify({email:pendingEmail})});setMessage(x.message)}catch(e){setError(e.message)}finally{setBusy(false)}};return <div className="portal-auth"><div className="portal-auth-card"><div className="portal-logo"><ShieldCheck size={30}/></div><small>ENAT · ESCOLA SEGURA</small><h1>{role==='aluno'?'Área do Aluno':'Portal da Escola'}</h1><p>{mode==='login'?'Entre para continuar sua jornada.':'Crie seu acesso institucional.'}</p><div className="auth-role-tabs"><button type="button" className={role==='aluno'?'on':''} onClick={()=>{window.location.href='/aluno'}}>🎓 Aluno</button><button type="button" className={role==='escola'?'on':''} onClick={()=>{window.location.href='/escola'}}>🏫 Escola</button></div><div className="auth-tabs"><button type="button" className={mode==='login'?'on':''} onClick={()=>setMode('login')}>Entrar</button><button type="button" className={mode==='register'?'on':''} onClick={()=>setMode('register')}>Cadastrar</button></div>{error&&<div className="portal-error">{error}</div>}{message&&<div className="portal-ok">{message}</div>}<form onSubmit={submit}>{mode==='register'&&<><input className={role==='aluno'?'student-name-field':''} required placeholder={role==='aluno'?'Nome completo do aluno':'Nome do responsável pela escola'} value={form.name||''} onChange={e=>set('name',e.target.value)}/>{role==='aluno'?<div className="portal-student-grid"><div className="portal-school-search"><input placeholder="🔎 Buscar sua escola no SIGES" value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}/><small>{filteredSchools.length} escolas encontradas no SIGES</small></div><select required value={form.schoolId||''} onChange={e=>set('schoolId',e.target.value)}><option value="">Selecione sua escola</option>{filteredSchools.map(s=><option key={s.id} value={s.id}>{s.name} — {s.bairro||s.municipality}/{s.uf}</option>)}</select><label className="portal-field-label">Data de nascimento do aluno</label><input required type="date" aria-label="Data de nascimento do aluno" value={form.birthDate||''} onChange={e=>set('birthDate',e.target.value)}/><input required placeholder="Série / etapa" value={form.grade||''} onChange={e=>set('grade',e.target.value)}/><input required placeholder="Turma" value={form.className||''} onChange={e=>set('className',e.target.value)}/><input placeholder="Nome do responsável" value={form.responsibleName||''} onChange={e=>set('responsibleName',e.target.value)}/><input placeholder="Contato do responsável" value={form.responsibleContact||''} onChange={e=>set('responsibleContact',e.target.value)}/></div>:<div className="portal-school-grid"><div className="school-search-wide"><input required placeholder="🔎 Buscar e selecionar sua escola no SIGES" value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}/><small>{filteredSchools.length} unidades escolares encontradas</small></div><select className="school-search-select" required value={form.sigesSchoolId||''} onChange={e=>{const v=e.target.value;const sc=schools.find(x=>x.id===v);set('sigesSchoolId',v);if(sc){set('schoolName',sc.name);set('municipality',sc.municipality);set('uf',sc.uf);set('bairro',sc.bairro||'');set('address',sc.address||'')}}}><option value="">Selecione a escola cadastrada no SIGES</option>{filteredSchools.map(sc=><option key={sc.id} value={sc.id}>{sc.name} — {sc.bairro||sc.municipality}/{sc.uf}</option>)}</select><input placeholder="INEP (opcional)" value={form.inep||''} onChange={e=>set('inep',e.target.value)}/><input readOnly placeholder="Município" value={form.municipality||''}/><input readOnly placeholder="UF" maxLength="2" value={form.uf||''}/><input readOnly placeholder="Bairro" value={form.bairro||''}/><input readOnly className="school-address" placeholder="Endereço" value={form.address||''}/></div>}</>}<input required type="email" placeholder="E-mail" value={form.email||''} onChange={e=>set('email',e.target.value)}/><input required minLength="6" type="password" placeholder="Senha" value={form.password||''} onChange={e=>set('password',e.target.value)}/><button className="portal-primary" disabled={busy}>{busy?'Processando…':mode==='login'?'Entrar':'Criar cadastro'}</button></form>{mode==='login'&&pendingEmail&&<button type="button" className="portal-secondary" onClick={resend} disabled={busy}>✉️ Reenviar confirmação para {pendingEmail}</button>}<div className="portal-note">O e-mail confirma a identidade. Depois, o vínculo escolar é validado pela escola ou pela Administração SIGES antes da liberação do acesso.</div></div></div>}
+function Auth({role,onDone}){
+  const[mode,setMode]=useState('login');
+  const[validationMethod,setValidationMethod]=useState('email');
+  const[form,setForm]=useState({});
+  const[schools,setSchools]=useState([]);
+  const[schoolSearch,setSchoolSearch]=useState('');
+  const[busy,setBusy]=useState(false);
+  const[error,setError]=useState('');
+  const[message,setMessage]=useState('');
+  const[pendingEmail,setPendingEmail]=useState('');
+  const[accessCode,setAccessCode]=useState('');
+
+  useEffect(()=>{if(mode==='register')api('/public-schools').then(x=>setSchools(x.schools||[])).catch(()=>{})},[mode,role]);
+
+  const filteredSchools=schools.filter(s=>{
+    const q=schoolSearch.trim().toLocaleLowerCase('pt-BR');
+    return !q||[s.name,s.bairro,s.address,s.municipality].join(' ').toLocaleLowerCase('pt-BR').includes(q);
+  });
+
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const submit=async e=>{
+    e.preventDefault();
+    setError('');
+    setMessage('');
+    setAccessCode('');
+    setBusy(true);
+    try{
+      if(mode==='login'){
+        const x=await api('/login',{method:'POST',body:JSON.stringify({email:form.email,password:form.password})});
+        localStorage.setItem('siges_portal_token',x.token);
+        localStorage.setItem('siges_portal_user',JSON.stringify(x.user));
+        onDone(x.user);
+      }else{
+        const profile=role==='aluno'
+          ?{schoolId:form.schoolId,birthDate:form.birthDate,grade:form.grade,className:form.className,shift:form.shift,responsibleName:form.responsibleName,responsibleContact:form.responsibleContact}
+          :{sigesSchoolId:form.sigesSchoolId,schoolName:form.schoolName,inep:form.inep,municipality:form.municipality,uf:form.uf,bairro:form.bairro,address:form.address};
+
+        const x=await api('/register',{
+          method:'POST',
+          body:JSON.stringify({
+            role,
+            name:form.name,
+            email:role==='aluno'&&validationMethod==='school'?'':form.email,
+            password:form.password,
+            profile
+          })
+        });
+
+        if(x.schoolValidationRequired){
+          setAccessCode(x.accessCode||'');
+          setMessage(x.message||'Cadastro recebido. Aguarde a validação da escola.');
+          setMode('login');
+          setForm({});
+          setPendingEmail('');
+        }else{
+          setMessage(x.message||'Cadastro realizado. Verifique seu e-mail.');
+          setMode('login');
+          setPendingEmail(form.email||'');
+        }
+      }
+    }catch(e){
+      setError(e.message);
+      if(/e-mail|email|confirm/i.test(e.message))setPendingEmail(form.email||'');
+    }finally{
+      setBusy(false);
+    }
+  };
+
+  const resend=async()=>{
+    if(!pendingEmail)return;
+    setBusy(true);
+    try{
+      const x=await api('/resend-verification',{method:'POST',body:JSON.stringify({email:pendingEmail})});
+      setMessage(x.message);
+    }catch(e){setError(e.message)}
+    finally{setBusy(false)}
+  };
+
+  return <div className="portal-auth">
+    <div className="portal-auth-card">
+      <div className="portal-logo"><ShieldCheck size={30}/></div>
+      <small>ENAT · ESCOLA SEGURA</small>
+      <h1>{role==='aluno'?'Área do Aluno':'Portal da Escola'}</h1>
+      <p>{mode==='login'?'Entre para continuar sua jornada.':'Crie seu acesso institucional.'}</p>
+
+      <div className="auth-role-tabs">
+        <button type="button" className={role==='aluno'?'on':''} onClick={()=>{window.location.href='/aluno'}}>🎓 Aluno</button>
+        <button type="button" className={role==='escola'?'on':''} onClick={()=>{window.location.href='/escola'}}>🏫 Escola</button>
+      </div>
+
+      <div className="auth-tabs">
+        <button type="button" className={mode==='login'?'on':''} onClick={()=>{setMode('login');setError('');setMessage('');setAccessCode('')}}>Entrar</button>
+        <button type="button" className={mode==='register'?'on':''} onClick={()=>{setMode('register');setError('');setMessage('');setAccessCode('')}}>Cadastrar</button>
+      </div>
+
+      {error&&<div className="portal-error">{error}</div>}
+      {message&&<div className="portal-ok">{message}</div>}
+
+      {accessCode&&<div className="portal-panel" style={{margin:'12px 0',textAlign:'left'}}>
+        <strong>🔐 Código de acesso do aluno</strong>
+        <div style={{fontSize:24,fontWeight:900,letterSpacing:2,margin:'8px 0'}}>{accessCode}</div>
+        <p style={{margin:0}}>Guarde este código e a senha criada no cadastro. A escola precisa validar seu vínculo antes do primeiro acesso.</p>
+      </div>}
+
+      {mode==='register'&&role==='aluno'&&<div className="auth-tabs">
+        <button type="button" className={validationMethod==='email'?'on':''} onClick={()=>setValidationMethod('email')}>📧 Validar por e-mail</button>
+        <button type="button" className={validationMethod==='school'?'on':''} onClick={()=>setValidationMethod('school')}>🏫 Validar pela escola</button>
+      </div>}
+
+      <form onSubmit={submit}>
+        {mode==='register'&&<>
+          <input className={role==='aluno'?'student-name-field':''} required placeholder={role==='aluno'?'Nome completo do aluno':'Nome do responsável pela escola'} value={form.name||''} onChange={e=>set('name',e.target.value)}/>
+
+          {role==='aluno'
+            ? <div className="portal-student-grid">
+                <div className="portal-school-search">
+                  <input placeholder="🔎 Buscar sua escola no SIGES" value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}/>
+                  <small>{filteredSchools.length} escolas encontradas no SIGES</small>
+                </div>
+                <select required value={form.schoolId||''} onChange={e=>set('schoolId',e.target.value)}>
+                  <option value="">Selecione sua escola</option>
+                  {filteredSchools.map(s=><option key={s.id} value={s.id}>{s.name} — {s.bairro||s.municipality}/{s.uf}</option>)}
+                </select>
+                <label className="portal-field-label">Data de nascimento do aluno</label>
+                <input required type="date" aria-label="Data de nascimento do aluno" value={form.birthDate||''} onChange={e=>set('birthDate',e.target.value)}/>
+                <input required placeholder="Série / etapa" value={form.grade||''} onChange={e=>set('grade',e.target.value)}/>
+                <input required placeholder="Turma" value={form.className||''} onChange={e=>set('className',e.target.value)}/>
+                <input placeholder="Nome do responsável" value={form.responsibleName||''} onChange={e=>set('responsibleName',e.target.value)}/>
+                <input placeholder="Contato do responsável" value={form.responsibleContact||''} onChange={e=>set('responsibleContact',e.target.value)}/>
+              </div>
+            : <div className="portal-school-grid">
+                <div className="school-search-wide">
+                  <input required placeholder="🔎 Buscar e selecionar sua escola no SIGES" value={schoolSearch} onChange={e=>setSchoolSearch(e.target.value)}/>
+                  <small>{filteredSchools.length} unidades escolares encontradas</small>
+                </div>
+                <select className="school-search-select" required value={form.sigesSchoolId||''} onChange={e=>{const v=e.target.value;const sc=schools.find(x=>x.id===v);set('sigesSchoolId',v);if(sc){set('schoolName',sc.name);set('municipality',sc.municipality);set('uf',sc.uf);set('bairro',sc.bairro||'');set('address',sc.address||'')}}}>
+                  <option value="">Selecione a escola cadastrada no SIGES</option>
+                  {filteredSchools.map(sc=><option key={sc.id} value={sc.id}>{sc.name} — {sc.bairro||sc.municipality}/{sc.uf}</option>)}
+                </select>
+                <input placeholder="INEP (opcional)" value={form.inep||''} onChange={e=>set('inep',e.target.value)}/>
+                <input readOnly placeholder="Município" value={form.municipality||''}/>
+                <input readOnly placeholder="UF" maxLength="2" value={form.uf||''}/>
+                <input readOnly placeholder="Bairro" value={form.bairro||''}/>
+                <input readOnly className="school-address" placeholder="Endereço" value={form.address||''}/>
+              </div>}
+        </>}
+
+        {mode==='register'&&role==='aluno'&&validationMethod==='school'&&<div className="portal-note" style={{textAlign:'left',marginBottom:10}}>
+          Não tem e-mail? Tudo bem. O vínculo será confirmado pela escola com base nos dados escolares informados. Após a aprovação, entre com o código de acesso e a senha.
+        </div>}
+
+        <input required={mode==='login'||validationMethod==='email'||role!=='aluno'} type="email" placeholder={mode==='login'?'E-mail ou código de acesso':'E-mail (opcional na validação pela escola)'} value={form.email||''} onChange={e=>set('email',e.target.value)}/>
+        <input required minLength="6" type="password" placeholder="Senha" value={form.password||''} onChange={e=>set('password',e.target.value)}/>
+        <button className="portal-primary" disabled={busy}>{busy?'Processando…':mode==='login'?'Entrar':'Criar cadastro'}</button>
+      </form>
+
+      {mode==='login'&&pendingEmail&&<button type="button" className="portal-secondary" onClick={resend} disabled={busy}>✉️ Reenviar confirmação para {pendingEmail}</button>}
+      <div className="portal-note">Para alunos, há duas formas de validação: e-mail ou confirmação do vínculo pela escola. A escola ou a Administração SIGES libera o acesso somente após validar o vínculo.</div>
+    </div>
+  </div>
+}
 
 function VerifyEmail(){const[status,setStatus]=useState('loading'),[message,setMessage]=useState('Confirmando seu e-mail…');useEffect(()=>{const token=new URLSearchParams(location.search).get('token');if(!token){setStatus('error');setMessage('Link de confirmação inválido.');return}api('/verify-email?token='+encodeURIComponent(token)).then(x=>{setStatus('ok');setMessage(x.message)}).catch(e=>{setStatus('error');setMessage(e.message)})},[]);return <div className="portal-auth"><div className="portal-auth-card"><div className="portal-logo"><ShieldCheck size={30}/></div><small>ENAT · ESCOLA SEGURA</small><h1>{status==='ok'?'E-mail confirmado':'Confirmação de e-mail'}</h1><div className={status==='ok'?'portal-ok':'portal-error'}>{message}</div><button className="portal-primary" onClick={()=>{window.location.href='/aluno'}}>Ir para o acesso do aluno</button><button className="portal-secondary" onClick={()=>{window.location.href='/escola'}}>Ir para o acesso da escola</button></div></div}
 function Frame({role,tab,setTab,logout,children}){const menu=role==='aluno'?studentMenu:schoolMenu;const u=JSON.parse(localStorage.getItem('siges_portal_user')||'{}');return <div className="portal"><aside className="portal-side"><div className="portal-brand"><ShieldCheck size={24}/><b>ESCOLA SEGURA<small>{role==='aluno'?'ALUNO':'ESCOLA'}</small></b></div><nav>{menu.map(([id,l,I])=><button key={id} className={tab===id?'active':''} onClick={()=>setTab(id)}><I size={17}/>{l}</button>)}</nav><div className="portal-side-foot"><span>{u.name||'Usuário'}</span><button onClick={logout}><LogOut size={15}/> Sair</button></div></aside><main className="portal-main"><header className="portal-header"><div><small>PLATAFORMA ESCOLA SEGURA</small><h2>{role==='aluno'?'Jornada do Aluno':'Painel da Escola'}</h2></div><div className="portal-user"><b>{u.name||'Usuário'}</b><span>{role==='aluno'?'Aluno':'Gestão escolar'}</span></div></header>{children}</main></div>}
