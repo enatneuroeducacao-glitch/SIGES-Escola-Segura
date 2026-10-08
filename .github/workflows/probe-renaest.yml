@@ -1,0 +1,44 @@
+name: Probe RENAEST structure
+
+on:
+  workflow_dispatch:
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Descobrir último recurso RENAEST 2026
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, urllib.request, re
+          u='https://dados.transportes.gov.br/api/3/action/package_show?id=renaest'
+          pkg=json.load(urllib.request.urlopen(u, timeout=60))['result']
+          rs=[r for r in pkg['resources'] if re.search(r'RENAEST\s*-?\s*Mensal\s*-?\s*04-2026', r.get('name',''), re.I)]
+          if not rs:
+              raise SystemExit('Recurso 04-2026 não encontrado')
+          r=rs[0]
+          print('NAME=',r['name'])
+          print('ID=',r['id'])
+          print('URL=',r['url'])
+          print('SIZE=',r.get('size'))
+          open('/tmp/renaest-url','w').write(r['url'])
+          PY
+      - name: Baixar RENAEST 04-2026
+        run: curl -L --fail --retry 3 --retry-delay 3 -o /tmp/renaest.zip "$(cat /tmp/renaest-url)"
+      - name: Inspecionar ZIP
+        shell: bash
+        run: |
+          set -euo pipefail
+          unzip -l /tmp/renaest.zip | head -80
+          mkdir -p /tmp/renaest
+          unzip -q /tmp/renaest.zip -d /tmp/renaest
+          echo '--- ARQUIVOS ---'
+          find /tmp/renaest -type f -maxdepth 3 -print
+          echo '--- CABEÇALHOS ---'
+          while IFS= read -r f; do
+            echo "### $f"
+            file "$f" || true
+            head -n 5 "$f" | cut -c1-1500 || true
+          done < <(find /tmp/renaest -type f)
