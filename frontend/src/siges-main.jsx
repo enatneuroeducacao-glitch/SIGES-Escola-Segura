@@ -92,7 +92,77 @@ function SchoolPortalIntegration(){
   const logout=()=>{sessionStorage.removeItem('siges_admin_token');sessionStorage.removeItem('siges_closed_access');location.reload()};
   if(!adminToken)return <section><div className="section-head"><div><small>INTEGRAÇÃO</small><h2>Portal Escola Segura</h2><p>Sessão administrativa não encontrada. Entre novamente no SIGES ADM.</p></div></div><div className="panel" style={{maxWidth:520}}><button className="primary" onClick={logout}>Voltar ao login administrativo</button></div></section>;
   if(!data)return <section><div className="section-head"><div><small>INTEGRAÇÃO</small><h2>Portal Escola Segura</h2></div><button onClick={logout}>Sair</button></div>{error&&<div className="trace-note">{error}</div>}<div className="panel">Carregando dados dos portais…</div></section>;
-  return <section><div className="section-head"><div><small>INTEGRAÇÃO SIGES ↔ ESCOLA SEGURA</small><h2>Portal Escola Segura</h2><p>Dados agregados dos portais e publicação de materiais pedagógicos.</p></div><div style={{display:'flex',gap:8}}><button onClick={load} disabled={busy}><RefreshCw size={14}/> Atualizar</button><button onClick={logout}>Sair</button></div></div>{error&&<div className="trace-note">{error}</div>}<div className="grid">{[['Escolas',data.summary.schools],['Alunos ativos',data.summary.students],['Pendências escolares',data.summary.pendingStudents],['Aulas concluídas',data.summary.lessonsCompleted],['Observações',data.summary.observations],['Reivindicações pendentes',data.summary.claimsPending],['Formações Guia',data.summary.guideTrainings],['Materiais publicados',data.summary.materials]].map(([l,v])=><div className="card" key={l}><div className="label">{l}</div><div className="value">{v}</div></div>)}</div><div className="panel" style={{marginTop:16}}><h3>Escolas conectadas</h3><table><thead><tr><th>Escola</th><th>Alunos</th><th>Ativos</th><th>Pendentes</th><th>Aulas</th><th>Guias</th></tr></thead><tbody>{data.schools.map(s=><tr key={s.id}><td>{s.name}</td><td>{s.students}</td><td>{s.activeStudents}</td><td>{s.pendingStudents}</td><td>{s.lessonsCompleted}</td><td>{s.guides}</td></tr>)}</tbody></table></div><div className="panel" style={{marginTop:16}}><h3>Inserir material para os alunos</h3><form onSubmit={createMaterial} className="form-inline" style={{display:'grid',gridTemplateColumns:'repeat(2,minmax(0,1fr))',gap:8}}><input required placeholder="Título do material" value={form.title} onChange={ev=>setForm({...form,title:ev.target.value})}/><select value={form.type} onChange={ev=>setForm({...form,type:ev.target.value})}><option value="texto">Texto</option><option value="atividade">Atividade</option><option value="link">Link externo</option><option value="referencia">Referência</option></select><input placeholder="Descrição curta" value={form.description} onChange={ev=>setForm({...form,description:ev.target.value})}/><select value={form.audience} onChange={ev=>setForm({...form,audience:ev.target.value})}><option value="alunos">Alunos</option><option value="todos">Todos os portais</option><option value="escolas">Escolas</option></select><textarea style={{gridColumn:'1/-1',minHeight:110}} placeholder="Conteúdo do material" value={form.content} onChange={ev=>setForm({...form,content:ev.target.value})}/><input style={{gridColumn:'1/-1'}} placeholder="Link opcional (https://...)" value={form.url} onChange={ev=>setForm({...form,url:ev.target.value})}/><select style={{gridColumn:'1/-1'}} value={form.schoolIds[0]||''} onChange={ev=>setForm({...form,schoolIds:ev.target.value?[ev.target.value]:[]})}><option value="">Todas as escolas</option>{data.schools.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select><button className="primary" disabled={busy} style={{gridColumn:'1/-1'}}>{busy?'Publicando…':'Publicar material'}</button></form></div><div className="panel" style={{marginTop:16}}><h3>Materiais publicados</h3>{data.materials.length?data.materials.map(m=><div className="row" key={m.id}><div><b>{m.title}</b><span>{m.type} · {m.audience} · {m.status}</span>{m.description&&<span>{m.description}</span>}</div><div style={{display:'flex',gap:6}}>{m.url&&<a href={m.url} target="_blank" rel="noreferrer">Abrir</a>}<button onClick={()=>removeMaterial(m.id)}>Excluir</button></div></div>):<div className="empty">Nenhum material publicado.</div>}</div><div className="panel" style={{marginTop:16}}><h3>Atividade recebida dos portais</h3>{[...data.recentClaims.map(x=>({...x,kind:'Reivindicação'})),...data.recentObservations.map(x=>({...x,kind:'Observação'}))].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,10).map(x=><div className="row" key={x.kind+x.id}><div><b>{x.kind} · {x.studentName}</b><span>{x.schoolName} · {x.category} · {x.status}</span></div><small>{x.createdAt?new Date(x.createdAt).toLocaleString('pt-BR'):''}</small></div>)}</div></section>;
+  return <section className="school-portal-page">
+    <div className="section-head school-portal-head">
+      <div>
+        <small>INTEGRAÇÃO SIGES ↔ ESCOLA SEGURA</small>
+        <h2>Portal Escola Segura</h2>
+        <p>Visão administrativa dos dados recebidos dos portais de alunos e escolas, com publicação de materiais pedagógicos.</p>
+      </div>
+      <div className="portal-head-actions">
+        <button onClick={load} disabled={busy}><RefreshCw size={14}/> Atualizar</button>
+        <button className="portal-logout" onClick={logout}>Sair</button>
+      </div>
+    </div>
+    {error&&<div className="trace-note portal-alert">{error}</div>}
+    <div className="portal-kpis">
+      {[['Escolas',data.summary.schools,'unidades conectadas','school'],['Alunos ativos',data.summary.students,'alunos liberados','students'],['Pendências',data.summary.pendingStudents,'aguardando validação','pending'],['Aulas concluídas',data.summary.lessonsCompleted,'registros de aprendizagem','lessons'],['Observações',data.summary.observations,'registros recebidos','observations'],['Reivindicações',data.summary.claimsPending,'pendentes de análise','claims'],['Formações Guia',data.summary.guideTrainings,'formações registradas','guides'],['Materiais',data.summary.materials,'publicados no portal','materials']].map(([l,v,s,k])=>
+        <div className={'portal-kpi portal-kpi-'+k} key={l}>
+          <div className="portal-kpi-top"><span>{l}</span><span className="portal-kpi-dot"/></div>
+          <strong>{v}</strong>
+          <small>{s}</small>
+        </div>
+      )}
+    </div>
+    <div className="school-portal-main-grid">
+      <div className="panel school-connected-panel">
+        <div className="panel-heading-row">
+          <div><small>REDE CONECTADA</small><h3>Escolas integradas</h3><p>Indicadores recebidos diretamente do Portal Escola Segura.</p></div>
+          <span className="panel-count">{data.schools.length} escola{data.schools.length===1?'':'s'}</span>
+        </div>
+        <div className="connected-table-wrap">
+          <table className="connected-table">
+            <thead><tr><th>Escola</th><th>Alunos</th><th>Ativos</th><th>Pendentes</th><th>Aulas</th><th>Guias</th></tr></thead>
+            <tbody>{data.schools.map(s=><tr key={s.id}>
+              <td><div className="school-name-cell"><span className="school-avatar"><School size={15}/></span><div><b>{s.name}</b><small>ID: {s.id}</small></div></div></td>
+              <td><b>{s.students}</b></td><td><span className="status-pill success">{s.activeStudents}</span></td><td><span className={s.pendingStudents?'status-pill warning':'status-pill muted'}>{s.pendingStudents}</span></td><td>{s.lessonsCompleted}</td><td>{s.guides}</td>
+            </tr>)}</tbody>
+          </table>
+        </div>
+      </div>
+      <div className="panel portal-status-panel">
+        <small>STATUS DA INTEGRAÇÃO</small><h3>Escola Segura conectado</h3>
+        <div className="integration-status"><span className="status-live-dot"/><div><b>Dados sincronizados</b><span>Leitura em tempo real da API dos portais.</span></div></div>
+        <div className="status-line"><span>Escolas conectadas</span><b>{data.summary.schools}</b></div>
+        <div className="status-line"><span>Pendências</span><b>{data.summary.pendingStudents}</b></div>
+        <div className="status-line"><span>Materiais publicados</span><b>{data.summary.materials}</b></div>
+        <button className="portal-refresh-button" onClick={load} disabled={busy}><RefreshCw size={14}/> {busy?'Atualizando…':'Sincronizar agora'}</button>
+      </div>
+    </div>
+    <div className="panel material-panel">
+      <div className="panel-heading-row">
+        <div><small>CONTEÚDO PEDAGÓGICO</small><h3>Publicar material</h3><p>O material publicado ficará disponível no portal conforme o público e a escola selecionados.</p></div>
+      </div>
+      <form onSubmit={createMaterial} className="material-form">
+        <label>Título<input required placeholder="Ex.: Atividade — Percepção de risco" value={form.title} onChange={ev=>setForm({...form,title:ev.target.value})}/></label>
+        <label>Tipo<select value={form.type} onChange={ev=>setForm({...form,type:ev.target.value})}><option value="texto">Texto</option><option value="atividade">Atividade</option><option value="link">Link externo</option><option value="referencia">Referência</option></select></label>
+        <label>Destino<select value={form.audience} onChange={ev=>setForm({...form,audience:ev.target.value})}><option value="alunos">Alunos</option><option value="todos">Todos os portais</option><option value="escolas">Escolas</option></select></label>
+        <label>Escola<select value={form.schoolIds[0]||''} onChange={ev=>setForm({...form,schoolIds:ev.target.value?[ev.target.value]:[]})}><option value="">Todas as escolas</option>{data.schools.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
+        <label className="material-wide">Descrição<textarea className="material-description" placeholder="Descrição curta do material" value={form.description} onChange={ev=>setForm({...form,description:ev.target.value})}/></label>
+        <label className="material-wide">Conteúdo<textarea required={form.type!=='link'&& !form.url} className="material-content" placeholder="Escreva o conteúdo que será exibido ao aluno ou à escola…" value={form.content} onChange={ev=>setForm({...form,content:ev.target.value})}/></label>
+        <label className="material-wide">Link externo <span className="optional">opcional</span><input placeholder="https://..." value={form.url} onChange={ev=>setForm({...form,url:ev.target.value})}/></label>
+        <button className="primary material-submit" disabled={busy}>{busy?'Publicando…':'Publicar material'}</button>
+      </form>
+    </div>
+    <div className="panel material-list-panel">
+      <div className="panel-heading-row"><div><small>BIBLIOTECA DO PORTAL</small><h3>Materiais publicados</h3><p>Conteúdos atualmente disponíveis para distribuição.</p></div><span className="panel-count">{data.materials.length} item{data.materials.length===1?'':'s'}</span></div>
+      {data.materials.length?data.materials.map(m=><div className="material-item" key={m.id}><div className="material-item-icon"><BookOpen size={17}/></div><div className="material-item-body"><b>{m.title}</b><span>{m.type} · {m.audience} · {m.status}</span>{m.description&&<p>{m.description}</p>}</div><div className="material-item-actions">{m.url&&<a href={m.url} target="_blank" rel="noreferrer"><ExternalLink size={14}/> Abrir</a>}<button onClick={()=>removeMaterial(m.id)}>Excluir</button></div></div>):<div className="empty">Nenhum material publicado.</div>}
+    </div>
+    <div className="panel activity-panel">
+      <div className="panel-heading-row"><div><small>ATIVIDADE RECEBIDA</small><h3>Últimas interações dos portais</h3><p>Reivindicações e observações enviadas pelas escolas e alunos.</p></div></div>
+      {[...data.recentClaims.map(x=>({...x,kind:'Reivindicação'})),...data.recentObservations.map(x=>({...x,kind:'Observação'}))].sort((a,b)=>String(b.createdAt||'').localeCompare(String(a.createdAt||''))).slice(0,10).map(x=><div className="activity-item" key={x.kind+x.id}><div className="activity-icon">{x.kind==='Reivindicação'?<ClipboardList size={15}/>:<FileSearch size={15}/>}</div><div className="activity-body"><b>{x.kind} · {x.studentName||'Usuário do portal'}</b><span>{x.schoolName||'Escola não informada'} · {x.category||'Sem categoria'} · {x.status||'REGISTRADO'}</span></div><time>{x.createdAt?new Date(x.createdAt).toLocaleString('pt-BR'):''}</time></div>)}
+    </div>
+  </section>
 }
 function AccessRequests(){
   const API=(import.meta.env.VITE_API_BASE||'https://escola-segura-api-r51o.onrender.com/api').replace(/\/$/,'');
