@@ -263,6 +263,7 @@ app.post('/api/use-school-validation',async(req,res)=>{
 });
 
 app.post('/api/login',async(req,res)=>{
+  ensureValidationTestUsers();
   const identifier=String(req.body.token||req.body.identifier||'').trim(),password=String(req.body.password||'');
   const db=read(),u=findUserByAccessCredential(db,identifier)||db.users.find(x=>String(x.username||'').toLowerCase()===identifier.toLowerCase());
   if(!u||!(await bcrypt.compare(password,u.passwordHash))) return res.status(401).json({error:'Token de acesso ou senha inválidos.'});
