@@ -17,7 +17,6 @@ async function inspectRenaestZip(filePath) {
     let headers = null;
     let samples = [];
     let rows = 0;
-    let delimiter = null;
     const parser = entry.pipe(parse({
       bom: true,
       delimiter: DELIMITERS,
@@ -31,10 +30,7 @@ async function inspectRenaestZip(filePath) {
         rows++;
         if (!headers) {
           headers = record.map((v, i) => String(v || '').trim() || 'campo_' + (i + 1));
-          // csv-parse emits records but does not expose which delimiter matched.
-          // Estimate the separator from the header and the observed field count.
-          const raw = headers.join(' ');
-          delimiter = DELIMITERS.find(d => d !== '\\t' && raw.includes(d)) || 'auto (candidatos)';
+
         } else if (samples.length < 3) {
           samples.push(record);
         }
@@ -49,7 +45,7 @@ async function inspectRenaestZip(filePath) {
       sampledRecords: samples,
       recordsReadForInspection: rows,
       note: 'Amostra limitada aos primeiros 4 registros; não representa a contagem total.',
-      delimiter
+      acceptedDelimiterCandidates: [',', ';', 'tab', '|']
     });
   }
   return { fileBytes: stat.size, entries };
