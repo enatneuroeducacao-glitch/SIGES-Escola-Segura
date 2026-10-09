@@ -5,7 +5,6 @@ on:
     paths:
       - "backend/renaest-stream-import.js"
       - "backend/inspect-renaest-zip.js"
-      - "backend/inspect-renaest-zip.js"
       - "backend/renaest-stream-import.test.js"
       - "backend/package.json"
       - ".github/workflows/renaest-import-tests.yml"
@@ -14,6 +13,7 @@ on:
       - "feature/renaest-streaming-import"
     paths:
       - "backend/renaest-stream-import.js"
+      - "backend/inspect-renaest-zip.js"
       - "backend/renaest-stream-import.test.js"
       - "backend/package.json"
       - ".github/workflows/renaest-import-tests.yml"
