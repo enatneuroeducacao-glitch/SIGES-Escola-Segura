@@ -35,3 +35,12 @@ pg, unzipper, csv-parse.
 - Verificar se os arquivos contêm uma linha por ocorrência, vítima ou agregado. A chave hash elimina linhas idênticas dentro de cada conjunto, mas não substitui uma chave de negócio oficial.
 - Adicionar download seguro de objeto privado (R2/S3), controles de acesso ENAT, cancelamento/retomada e uma tela administrativa antes da liberação em produção.
 - Não converter totais municipais em valores por rua/corredor.
+
+## Inspeção prévia do arquivo (sem banco)
+Antes de importar, é possível listar os arquivos CSV/TXT dentro do ZIP, ler somente até quatro registros por arquivo e mostrar os cabeçalhos e uma pequena amostra, sem conectar ao PostgreSQL:
+```bash
+cd backend
+npm install
+npm run inspect:renaest -- "/caminho/arquivo.zip"
+``
+A inspeção não importa dados e não fornece contagem total de linhas. Use a saída para confirmar cabeçalhos, separador e granularidade antes de qualquer carga.
