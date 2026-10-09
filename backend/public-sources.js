@@ -121,13 +121,13 @@ async function runRenaestIngestion(resources,base){
         const totalCandidates=ms.filter(m=>m.totalSinistros!==null);
         byYear[y]={monthsProcessed:ms.length,monthsExpected:resources.filter(r=>String(r.name).includes(String(y))).length,records:ms.reduce((n,m)=>n+m.joinvilleRecords,0),aggregates:metrics,totalSinistros:totalCandidates.length?totalCandidates.reduce((n,m)=>n+m.totalSinistros,0):null};
       }
-      const next={...base,sourceStatus:failures.length?(good.length?'partial':'offline'):'online',ingestionStatus:results.length===pending.length?'complete':'processing',progress:{processed:results.length,total:pending.length,successful:good.length,failed:failures.length},monthly,annual:byYear,archives:good.map(x=>({name:x.resourceName,year:x.year,month:x.month,fileCount:x.fileCount,joinvilleRecords:x.joinvilleRecords,totalSinistros:x.totalSinistros,totalField:x.totalField,csvFiles:x.csvFiles,fields:x.fields,sample:x.sample})),errors:failures,latestAvailableMonth:good.filter(x=>x.year===2026).sort((a,b)=>b.month-a.month)[0]?.month||null,joinvilleRecords:good.reduce((n,x)=>n+x.joinvilleRecords,0),joinvilleAggregates:Object.assign({},...good.map(x=>x.joinvilleAggregates))};
+      const next={...base,sourceStatus:failures.length?(good.length?'partial':'offline'):'online',ingestionStatus:results.length!==pending.length?'processing':failures.length===0?'complete':good.length?'partial':'failed',progress:{processed:results.length,total:pending.length,successful:good.length,failed:failures.length},monthly,annual:byYear,archives:good.map(x=>({name:x.resourceName,year:x.year,month:x.month,fileCount:x.fileCount,joinvilleRecords:x.joinvilleRecords,totalSinistros:x.totalSinistros,totalField:x.totalField,csvFiles:x.csvFiles,fields:x.fields,sample:x.sample})),errors:failures,latestAvailableMonth:good.filter(x=>x.year===2026).sort((a,b)=>b.month-a.month)[0]?.month||null,joinvilleRecords:good.reduce((n,x)=>n+x.joinvilleRecords,0),joinvilleAggregates:Object.assign({},...good.map(x=>x.joinvilleAggregates))};
       cacheSet('renaest',next);
     }
   };
   await Promise.all(Array.from({length:Math.min(2,pending.length)},worker));
   const current=cacheGet('renaest')||base;
-  cacheSet('renaest',{...current,ingestionStatus:'complete',progress:{processed:pending.length,total:pending.length,successful:results.filter(x=>x.ok).length,failed:results.filter(x=>!x.ok).length}});
+  const successful=results.filter(x=>x.ok).length;const failed=results.length-successful;cacheSet('renaest',{...current,sourceStatus:failed?(successful?'partial':'offline'):'online',ingestionStatus:failed?(successful?'partial':'failed'):'complete',progress:{processed:pending.length,total:pending.length,successful,failed}});
   renaestJob=null;
 }
 async function loadRenaest(force=false){
