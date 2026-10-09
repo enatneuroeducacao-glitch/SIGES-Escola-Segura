@@ -162,6 +162,36 @@ function auth(req,res,next){
 app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));
 app.use('/api/public-sources',buildPublicSourcesRouter());
 
+// Shared operational store: every administrative tab reads and writes the same records.
+app.get('/api/admin/operations',auth,(req,res)=>{
+  if(req.user.role!=='enat')return res.status(403).json({error:'Apenas a Administração ENAT pode acessar os registros operacionais.'});
+  const db=read();
+  const operations=db.sigesOperations&&typeof db.sigesOperations==='object'?db.sigesOperations:{};
+  const keys=['riscos','reivindicacoes','plano','auditoria'];
+  const normalized=Object.fromEntries(keys.map(key=>[key,Array.isArray(operations[key])?operations[key]:[]]));
+  res.set('Cache-Control','no-store');
+  res.json({operations:normalized,updatedAt:operations.updatedAt||null,source:'SIGES_API'});
+});
+app.put('/api/admin/operations',auth,(req,res)=>{
+  if(req.user.role!=='enat')return res.status(403).json({error:'Apenas a Administração ENAT pode alterar os registros operacionais.'});
+  const body=req.body&&typeof req.body==='object'?req.body:{};
+  const keys=['riscos','reivindicacoes','plano','auditoria'];
+  const operations={};
+  for(const key of keys){
+    if(body[key]!==undefined&&!Array.isArray(body[key]))return res.status(400).json({error:'Formato inválido para '+key+'.'});
+    const rows=Array.isArray(body[key])?body[key]:[];
+    if(rows.length>5000)return res.status(413).json({error:'Limite de 5.000 registros por categoria excedido.'});
+    operations[key]=rows.filter(x=>x&&typeof x==='object').map(x=>({...x}));
+  }
+  operations.updatedAt=new Date().toISOString();
+  const db=read();
+  db.sigesOperations=operations;
+  audit(db,'SIGES_OPERATIONS_SYNC',req.user.id,{counts:Object.fromEntries(keys.map(key=>[key,operations[key].length]))});
+  write(db);
+  res.set('Cache-Control','no-store');
+  res.json({operations,updatedAt:operations.updatedAt,source:'SIGES_API'});
+});
+
 function stableSchoolId(name,address){
   const raw=normTerritory(String(name||'')+'|'+String(address||''));
   let h=2166136261;
