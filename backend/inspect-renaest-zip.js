@@ -3,19 +3,19 @@ const fs = require('node:fs');
 const unzipper = require('unzipper');
 const { parse } = require('csv-parse');
 
-const DELIMITERS = [',', ';', '\\t', '|'];
+const DELIMITERS = [',', ';', '\t', '|'];
 
 async function inspectRenaestZip(filePath) {
   const stat = await fs.promises.stat(filePath);
   const entries = [];
   const zip = fs.createReadStream(filePath).pipe(unzipper.Parse({ forceStream: true }));
   for await (const entry of zip) {
-    if (entry.type !== 'File' || !/\\.(csv|txt)$/i.test(entry.path) || /(^|\\/)\\./.test(entry.path)) {
+    if (entry.type !== 'File' || !/\.(csv|txt)$/i.test(entry.path) || /(^|\/)\./.test(entry.path)) {
       entry.autodrain();
       continue;
     }
     let headers = null;
-    let samples = [];
+    const samples = [];
     let rows = 0;
     const parser = entry.pipe(parse({
       bom: true,
@@ -30,7 +30,6 @@ async function inspectRenaestZip(filePath) {
         rows++;
         if (!headers) {
           headers = record.map((v, i) => String(v || '').trim() || 'campo_' + (i + 1));
-
         } else if (samples.length < 3) {
           samples.push(record);
         }
