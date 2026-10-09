@@ -77,7 +77,7 @@ async function importRenaestZip({ filePath, dataset, sourceName, importJobId }) 
       entriesSeen++;
       await updateJob(client, jobId, { current_entry: entry.path, entries_seen: entriesSeen });
       const period = inferPeriod(entry.path || sourceName);
-      const parser = entry.pipe(parse({ bom: true, columns: headers => headers.map((h, i) => String(h || '').trim() || 'campo_' + (i + 1)), delimiter: [',', ';', '\\t', '|'], skip_empty_lines: true, relax_column_count: true, trim: true }));
+      const parser = entry.pipe(parse({ bom: true, columns: headers => headers.map((h, i) => String(h || '').trim() || 'campo_' + (i + 1)), delimiter: [',', ';', '\t', '|'], skip_empty_lines: true, relax_column_count: true, trim: true }));
       for await (const row of parser) {
         rowsRead++;
         const municipality = identifyMunicipality(row);
