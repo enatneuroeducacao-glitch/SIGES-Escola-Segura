@@ -7,6 +7,7 @@ const crypto=require('crypto');
 const bcrypt=require('bcryptjs');
 const jwt=require('jsonwebtoken');
 const buildPublicSourcesRouter=require('./public-sources');
+const buildDataSourcesAdminRouter=require('./data-sources-admin');
 
 const app=express();
 const PORT=Number(process.env.PORT)||3001;
@@ -161,6 +162,7 @@ function auth(req,res,next){
 
 app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));
 app.use('/api/public-sources',buildPublicSourcesRouter());
+app.use('/api/admin/data-sources',buildDataSourcesAdminRouter({auth}));
 
 // Shared operational store: every administrative tab reads and writes the same records.
 app.get('/api/admin/operations',auth,(req,res)=>{
