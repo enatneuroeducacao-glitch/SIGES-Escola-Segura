@@ -1,4 +1,5 @@
 const express=require('express');
+const AdmZip=require('adm-zip');
 const buildDetransSpatial=require('./intelligence/detrans-spatial');
 const CBVJ_2025_URL='https://www.cbvj.org.br/blog/bombeiros-voluntarios-de-joinville-atenderam-14-574-ocorrencias-em-2025/';
 const CBVJ_2024_URL='https://www.cbvj.org.br/blog/bombeiros-voluntarios-de-joinville-atenderam-mais-de-11-mil-ocorrencias-em-2024/';
@@ -31,59 +32,116 @@ function parseDetrans(html){const items=[];const re=/<a[^>]+href=["']([^"']+)["'
 async function loadDetrans(force=false){if(!force&&cacheGet('detrans')&&cache.detrans.expiresAt>Date.now())return cache.detrans.data;const data=parseDetrans(await fetchText(DETRANS_URL));cacheSet('detrans',data);return data}
 async function getJson(url){const r=await withTimeout(fetch(url,{headers:{'User-Agent':'SIGES-Escola-Segura/3.7 public-data-reader'}}));if(!r.ok)throw new Error(`Fonte pública respondeu HTTP ${r.status}`);const data=await r.json();if(data&&data.error)throw new Error(data.error.message||'A fonte pública rejeitou a consulta.');return data}
 function catalogResources(pkg,yearPattern){const resources=Array.isArray(pkg?.result?.resources)?pkg.result.resources:[];return resources.filter(x=>yearPattern.test(String(x.name||x.description||''))).map(x=>({id:x.id,name:x.name||x.description||'Recurso',format:x.format||null,url:x.url||null,lastModified:x.last_modified||x.metadata_modified||null,size:x.size||null})).sort((a,b)=>String(b.name).localeCompare(String(a.name),undefined,{numeric:true}));}
+function csvRows(text){
+  const sample=String(text||'').slice(0,5000);
+  const delimiters=[';',',','\t'];
+  const delimiter=delimiters.map(d=>({d,n:(sample.split(/\r?\n/)[0]||'').split(d).length})).sort((a,b)=>b.n-a.n)[0].d;
+  const rows=[];let row=[],field='',quoted=false;
+  const s=String(text||'').replace(/^\uFEFF/,'');
+  for(let i=0;i<s.length;i++){
+    const ch=s[i];
+    if(ch==='"'&&quoted&&s[i+1]==='"'){field+='"';i++}
+    else if(ch==='"'){quoted=!quoted}
+    else if(ch===delimiter&&!quoted){row.push(field);field=''}
+    else if((ch==='\n'||ch==='\r')&&!quoted){if(ch==='\r'&&s[i+1]==='\n')i++;row.push(field);field='';if(row.some(x=>String(x).trim()!==''))rows.push(row);row=[]}
+    else field+=ch;
+  }
+  if(field!==''||row.length){row.push(field);rows.push(row)}
+  if(!rows.length)return[];
+  const headers=rows.shift().map((h,i)=>String(h||'').trim()||('campo_'+(i+1)));
+  return rows.map(values=>Object.fromEntries(headers.map((h,i)=>[h,String(values[i]??'').trim()])));
+}
+function normalizeField(v){return String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'')}
+function numericValue(v){if(v==null||String(v).trim()==='')return null;const s=String(v).trim().replace(/\s/g,'');const n=Number(s.includes(',')?s.replace(/\./g,'').replace(',','.'):s);return Number.isFinite(n)?n:null}
+function parseRenaestZip(buffer,resource){
+  const zip=new AdmZip(buffer);
+  const entries=zip.getEntries().filter(e=>!e.isDirectory&&!e.entryName.split('/').pop().startsWith('.')&&/\.(csv|txt)$/i.test(e.entryName));
+  const localityEntries=entries.filter(e=>/localidade|municipio|munic[ií]pio/i.test(e.entryName));
+  const chosen=localityEntries.length?localityEntries:entries;
+  const files=[];const municipalityRows=[];
+  for(const entry of chosen){
+    const raw=entry.getData();
+    let content;
+    try{content=new TextDecoder('utf-8').decode(raw)}catch{content=raw.toString('latin1')}
+    if(content.includes('\u0000'))content=raw.toString('latin1');
+    const rows=csvRows(content);
+    const headers=rows.length?Object.keys(rows[0]):[];
+    const municipalityKey=headers.find(k=>/(municipio|nomemunicipio|cidade|localidade)/.test(normalizeField(k)));
+    const ufKey=headers.find(k=>['uf','siglauf','unidadefederativa'].includes(normalizeField(k)));
+    const codeKey=headers.find(k=>/codigomunicipio|municipioibge|codmunicipio|codibge/.test(normalizeField(k)));
+    const filtered=rows.filter(row=>{
+      if(!municipalityKey&&!codeKey)return false;
+      const name=municipalityKey?normalizeField(row[municipalityKey]):'';
+      const uf=ufKey?normalizeField(row[ufKey]):'';
+      const code=codeKey?String(row[codeKey]||'').replace(/\D/g,''):'';
+      return (name==='joinville'&&(uf===''||uf==='sc'||uf==='santacatarina'))||code==='4209102';
+    });
+    municipalityRows.push(...filtered.map(row=>({...row,__file:entry.entryName})));
+    files.push({name:entry.entryName,rows:rows.length,columns:headers,joinvilleRows:filtered.length,municipalityField:municipalityKey||null});
+  }
+  const fields=municipalityRows.length?Object.keys(municipalityRows[0]).filter(k=>!k.startsWith('__')):[];
+  const metricFields=fields.filter(k=>/(sinistro|acidente|ocorrencia|quantidade|total|morto|obito|ferido|vitima)/.test(normalizeField(k)));
+  const aggregates={};
+  for(const key of metricFields){
+    const vals=municipalityRows.map(r=>numericValue(r[key])).filter(v=>v!==null);
+    if(vals.length)aggregates[key]=vals.reduce((a,b)=>a+b,0);
+  }
+  const totalField=metricFields.find(k=>/total.*(sinistro|acidente)|(sinistro|acidente).*total|quantidade.*(sinistro|acidente)|(sinistro|acidente).*quantidade/.test(normalizeField(k)));
+  const total=totalField?aggregates[totalField]:null;
+  const match=String(resource.name||'').match(/(0[1-9]|1[0-2])[- ]?(20(?:25|26))/i);
+  return {month:match?Number(match[1]):null,year:match?Number(match[2]):null,resourceName:resource.name,resourceUrl:resource.url,downloadedAt:new Date().toISOString(),fileCount:entries.length,csvFiles:files,joinvilleRecords:municipalityRows.length,joinvilleAggregates:aggregates,totalSinistros:total,totalField:totalField||null,fields:fields.slice(0,80),sample:municipalityRows.slice(0,10).map(({__file,...row})=>row)};
+}
+async function downloadRenaestResource(resource){
+  if(!resource.url)throw new Error('Recurso sem URL de download');
+  const response=await withTimeout(fetch(resource.url,{headers:{'User-Agent':'SIGES-Escola-Segura/4.0 archive-ingestion'}}),45000);
+  if(!response.ok)throw new Error('Download HTTP '+response.status);
+  const declared=Number(response.headers.get('content-length')||0);
+  if(declared>100*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 100 MB');
+  const bytes=Buffer.from(await response.arrayBuffer());
+  if(bytes.length>100*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 100 MB');
+  return parseRenaestZip(bytes,resource);
+}
+let renaestJob=null;
+async function runRenaestIngestion(resources,base){
+  const pending=[...resources];let cursor=0;
+  const results=[];
+  const worker=async()=>{
+    while(cursor<pending.length){
+      const resource=pending[cursor++];
+      try{results.push({ok:true,data:await downloadRenaestResource(resource)})}
+      catch(error){results.push({ok:false,name:resource.name,error:error.message})}
+      const good=results.filter(x=>x.ok).map(x=>x.data).sort((a,b)=>(a.year-b.year)||(a.month-b.month));
+      const failures=results.filter(x=>!x.ok);
+      const monthly=good.map(x=>({year:x.year,month:x.month,resourceName:x.resourceName,joinvilleRecords:x.joinvilleRecords,totalSinistros:x.totalSinistros,totalField:x.totalField,joinvilleAggregates:x.joinvilleAggregates,status:x.joinvilleRecords?'dados extraídos':x.csvFiles.length?'sem linha Joinville':'sem CSV compatível'}));
+      const byYear={};
+      for(const y of [2025,2026]){
+        const ms=good.filter(x=>x.year===y);
+        const metrics={};
+        for(const m of ms)for(const [k,v] of Object.entries(m.joinvilleAggregates||{}))metrics[k]=(metrics[k]||0)+v;
+        const totalCandidates=ms.filter(m=>m.totalSinistros!==null);
+        byYear[y]={monthsProcessed:ms.length,monthsExpected:resources.filter(r=>String(r.name).includes(String(y))).length,records:ms.reduce((n,m)=>n+m.joinvilleRecords,0),aggregates:metrics,totalSinistros:totalCandidates.length?totalCandidates.reduce((n,m)=>n+m.totalSinistros,0):null};
+      }
+      const next={...base,sourceStatus:failures.length?(good.length?'partial':'offline'):'online',ingestionStatus:results.length===pending.length?'complete':'processing',progress:{processed:results.length,total:pending.length,successful:good.length,failed:failures.length},monthly,annual:byYear,archives:good.map(x=>({name:x.resourceName,year:x.year,month:x.month,fileCount:x.fileCount,joinvilleRecords:x.joinvilleRecords,totalSinistros:x.totalSinistros,totalField:x.totalField,csvFiles:x.csvFiles,fields:x.fields,sample:x.sample})),errors:failures,latestAvailableMonth:good.filter(x=>x.year===2026).sort((a,b)=>b.month-a.month)[0]?.month||null,joinvilleRecords:good.reduce((n,x)=>n+x.joinvilleRecords,0),joinvilleAggregates:Object.assign({},...good.map(x=>x.joinvilleAggregates))};
+      cacheSet('renaest',next);
+    }
+  };
+  await Promise.all(Array.from({length:Math.min(3,pending.length)},worker));
+  const current=cacheGet('renaest')||base;
+  cacheSet('renaest',{...current,ingestionStatus:'complete',progress:{processed:pending.length,total:pending.length,successful:results.filter(x=>x.ok).length,failed:results.filter(x=>!x.ok).length}});
+  renaestJob=null;
+}
 async function loadRenaest(force=false){
   if(!force&&cacheGet('renaest')&&cache.renaest.expiresAt>Date.now())return cache.renaest.data;
+  if(renaestJob&&cacheGet('renaest'))return cache.renaest.data;
   const pkg=await getJson(RENAEST_CKAN);
-  const resources=catalogResources(pkg,/RENAEST\s*-?\s*Mensal\s*-?\s*(0[1-9]|1[0-2])-20(?:25|26)/i);
-  const latest=resources[0]||null;
-  let rows=[];
-  let ingestion='catalogo';
-  let ingestionError=null;
-  if(latest?.id){
-    try{
-      const ds=await getJson(`https://dados.transportes.gov.br/api/3/action/datastore_search?resource_id=${encodeURIComponent(latest.id)}&limit=5000`);
-      rows=Array.isArray(ds?.result?.records)?ds.result.records:[];
-      if(rows.length)ingestion='datastore';
-    }catch(error){ingestionError=error.message}
-  }
-  const keys=rows.length?Object.keys(rows[0]):[];
-  const normalizeKey=v=>String(v||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'');
-  const municipalityKey=keys.find(k=>/(municipio|nomemunicipio|municipionome|cidade|localidade)/.test(normalizeKey(k)));
-  const ufKey=keys.find(k=>normalizeKey(k)==='uf'||normalizeKey(k).includes('siglauf'));
-  const joinville=rows.filter(row=>{
-    if(!municipalityKey)return false;
-    const municipality=normalizeKey(row[municipalityKey]);
-    const uf=ufKey?normalizeKey(row[ufKey]):'';
-    return municipality==='joinville'&&(uf===''||uf==='sc');
-  });
-  const numericCandidates=keys.filter(k=>/(sinistro|acidente|ocorrencia|quantidade|total|vitima|morto|obito|ferido)/.test(normalizeKey(k)));
-  const aggregates={};
-  for(const key of numericCandidates){
-    const values=joinville.map(r=>Number(String(r[key]).replace(',','.'))).filter(Number.isFinite);
-    if(values.length)aggregates[key]=values.reduce((a,b)=>a+b,0);
-  }
-  const data={
-    source:'RENAEST',
-    sourceName:'Registro Nacional de Sinistros e Estatísticas de Trânsito',
-    municipality:'Joinville',
-    retrievedAt:new Date().toISOString(),
-    sourceStatus:latest?(rows.length?'online':'partial'):'offline',
-    latestCompleteYear:2026,
-    latestAvailableMonth:latest?(String(latest.name).match(/(0[1-9]|1[0-2])-2026/)||[])[1]||null:null,
-    available2026Months:resources.filter(x=>/2026/.test(x.name)).map(x=>{const m=String(x.name).match(/(0[1-9]|1[0-2])-2026/);return m?Number(m[1]):null}).filter(Boolean).sort((a,b)=>a-b),
-    resourceCount:resources.length,
-    resources,
-    ingestion,
-    ingestionError,
-    latestResource:latest,
-    joinvilleRecords:joinville.length,
-    joinvilleAggregates:aggregates,
-    detectedFields:{municipality:municipalityKey||null,uf:ufKey||null,numeric:numericCandidates},
-    methodology:'O SIGES consulta o catálogo RENAEST e, quando o recurso mensal está exposto no DataStore, ingere os registros para dentro da aplicação e filtra Joinville/SC. O painel identifica explicitamente quando a fonte oferece apenas catálogo, evitando transformar disponibilidade de arquivo em dado analítico.',
-    urls:{dataset:'https://dados.transportes.gov.br/dataset/renaest',api:RENAEST_CKAN}
-  };
-  cacheSet('renaest',data);
-  return data;
+  const resources=catalogResources(pkg,/RENAEST\s*-?\s*Mensal\s*-?\s*(0[1-9]|1[0-2])\s*-?20(?:25|26)/i)
+    .map(x=>{const m=String(x.name).match(/(0[1-9]|1[0-2])\s*-?\s*(20(?:25|26))/i);return {...x,month:m?Number(m[1]):null,year:m?Number(m[2]):null}})
+    .filter(x=>x.year&&x.month)
+    .sort((a,b)=>(a.year-b.year)||(a.month-b.month));
+  const initial={source:'RENAEST',sourceName:'Registro Nacional de Sinistros e Estatísticas de Trânsito',municipality:'Joinville/SC',retrievedAt:new Date().toISOString(),sourceStatus:resources.length?'partial':'offline',latestCompleteYear:2026,latestAvailableMonth:null,available2025Months:resources.filter(x=>x.year===2025).map(x=>x.month),available2026Months:resources.filter(x=>x.year===2026).map(x=>x.month),resourceCount:resources.length,resources,ingestion:'zip-csv',ingestionStatus:resources.length?'processing':'unavailable',progress:{processed:0,total:resources.length,successful:0,failed:0},monthly:[],annual:{},archives:[],errors:[],joinvilleRecords:0,joinvilleAggregates:{},methodology:'O SIGES baixa os ZIPs mensais do catálogo oficial RENAEST, extrai os arquivos CSV/TXT no backend e tenta identificar linhas de Joinville/SC. Totais só são exibidos quando existe campo numérico de sinistros/acidentes na planilha; a quantidade de linhas nunca é tratada como quantidade de acidentes.',urls:{dataset:'https://dados.transportes.gov.br/dataset/renaest',api:RENAEST_CKAN}};
+  cacheSet('renaest',initial);
+  if(resources.length){renaestJob=runRenaestIngestion(resources,initial).catch(error=>{const current=cacheGet('renaest')||initial;cacheSet('renaest',{...current,sourceStatus:'offline',ingestionStatus:'failed',errors:[...(current.errors||[]),{error:error.message}]});renaestJob=null});}
+  return initial;
 }
 async function loadHealth(force=false){if(!force&&cacheGet('health')&&cache.health.expiresAt>Date.now())return cache.health.data;const pkg=await getJson(SUS_HOSPITALS_CKAN);const resources=catalogResources(pkg,/2026/i);const latest=resources[0]||null;const data={source:'SAUDE',sourceName:'Ministério da Saúde — Hospitais e Leitos',municipality:'Brasil / recorte municipal quando disponível',retrievedAt:new Date().toISOString(),sourceStatus:resources.length?'online':'partial',latestCompleteYear:2026,latestResource:latest,resourceCount:resources.length,resources,methodology:'Catálogo oficial do Portal de Dados Abertos do SUS. Os dados agregados respeitam as limitações de privacidade da fonte; o SIGES não identifica cidadãos.',urls:{dataset:'https://dadosabertos.saude.gov.br/dataset/hospitais-e-leitos',api:SUS_HOSPITALS_CKAN}};cacheSet('health',data);return data}
 async function loadSimgeo(force=false){
