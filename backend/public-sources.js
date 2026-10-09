@@ -56,8 +56,7 @@ function numericValue(v){if(v==null||String(v).trim()==='')return null;const s=S
 function parseRenaestZip(buffer,resource){
   const zip=new AdmZip(buffer);
   const entries=zip.getEntries().filter(e=>!e.isDirectory&&!e.entryName.split('/').pop().startsWith('.')&&/\.(csv|txt)$/i.test(e.entryName));
-  const localityEntries=entries.filter(e=>/localidade|municipio|munic[ií]pio/i.test(e.entryName));
-  const chosen=localityEntries.length?localityEntries:entries;
+  const chosen=entries;
   const files=[];const municipalityRows=[];
   for(const entry of chosen){
     const raw=entry.getData();
@@ -67,8 +66,8 @@ function parseRenaestZip(buffer,resource){
     const rows=csvRows(content);
     const headers=rows.length?Object.keys(rows[0]):[];
     const municipalityKey=headers.find(k=>/(municipio|nomemunicipio|cidade|localidade)/.test(normalizeField(k)));
-    const ufKey=headers.find(k=>['uf','siglauf','unidadefederativa'].includes(normalizeField(k)));
-    const codeKey=headers.find(k=>/codigomunicipio|municipioibge|codmunicipio|codibge/.test(normalizeField(k)));
+    const ufKey=headers.find(k=>['uf','siglauf','unidadefederativa','ufacidente'].includes(normalizeField(k)));
+    const codeKey=headers.find(k=>/codigoibge|codigomunicipio|municipioibge|codmunicipio|codibge/.test(normalizeField(k)));
     const filtered=rows.filter(row=>{
       if(!municipalityKey&&!codeKey)return false;
       const name=municipalityKey?normalizeField(row[municipalityKey]):'';
@@ -76,7 +75,7 @@ function parseRenaestZip(buffer,resource){
       const code=codeKey?String(row[codeKey]||'').replace(/\D/g,''):'';
       return (name==='joinville'&&(uf===''||uf==='sc'||uf==='santacatarina'))||code==='4209102';
     });
-    municipalityRows.push(...filtered.map(row=>({...row,__file:entry.entryName})));
+    if(/acidente|sinistro/i.test(entry.entryName)) municipalityRows.push(...filtered.map(row=>({...row,__file:entry.entryName})));
     files.push({name:entry.entryName,rows:rows.length,columns:headers,joinvilleRows:filtered.length,municipalityField:municipalityKey||null});
   }
   const fields=municipalityRows.length?Object.keys(municipalityRows[0]).filter(k=>!k.startsWith('__')):[];
@@ -86,7 +85,7 @@ function parseRenaestZip(buffer,resource){
     const vals=municipalityRows.map(r=>numericValue(r[key])).filter(v=>v!==null);
     if(vals.length)aggregates[key]=vals.reduce((a,b)=>a+b,0);
   }
-  const totalField=metricFields.find(k=>/total.*(sinistro|acidente)|(sinistro|acidente).*total|quantidade.*(sinistro|acidente)|(sinistro|acidente).*quantidade/.test(normalizeField(k)));
+  const totalField=metricFields.find(k=>['qtdeacidente','qtdeacidentes','qtdesinistro','qtdesinistros','totalacidentes','totalsinistros'].includes(normalizeField(k))||/total.*(sinistro|acidente)|(sinistro|acidente).*total|quantidade.*(sinistro|acidente)|(sinistro|acidente).*quantidade/.test(normalizeField(k)));
   const total=totalField?aggregates[totalField]:null;
   const match=String(resource.name||'').match(/(0[1-9]|1[0-2])[- ]?(20(?:25|26))/i);
   return {month:match?Number(match[1]):null,year:match?Number(match[2]):null,resourceName:resource.name,resourceUrl:resource.url,downloadedAt:new Date().toISOString(),fileCount:entries.length,csvFiles:files,joinvilleRecords:municipalityRows.length,joinvilleAggregates:aggregates,totalSinistros:total,totalField:totalField||null,fields:fields.slice(0,80),sample:municipalityRows.slice(0,10).map(({__file,...row})=>row)};
