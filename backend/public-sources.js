@@ -96,9 +96,9 @@ async function downloadRenaestResource(resource){
   const response=await withTimeout(fetch(resource.url,{headers:{'User-Agent':'SIGES-Escola-Segura/4.0 archive-ingestion'}}),45000);
   if(!response.ok)throw new Error('Download HTTP '+response.status);
   const declared=Number(response.headers.get('content-length')||0);
-  if(declared>100*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 100 MB');
+  if(declared>50*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 50 MB');
   const bytes=Buffer.from(await response.arrayBuffer());
-  if(bytes.length>100*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 100 MB');
+  if(bytes.length>50*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 100 MB');
   return parseRenaestZip(bytes,resource);
 }
 let renaestJob=null;
@@ -125,7 +125,7 @@ async function runRenaestIngestion(resources,base){
       cacheSet('renaest',next);
     }
   };
-  await Promise.all(Array.from({length:Math.min(3,pending.length)},worker));
+  await Promise.all(Array.from({length:Math.min(2,pending.length)},worker));
   const current=cacheGet('renaest')||base;
   cacheSet('renaest',{...current,ingestionStatus:'complete',progress:{processed:pending.length,total:pending.length,successful:results.filter(x=>x.ok).length,failed:results.filter(x=>!x.ok).length}});
   renaestJob=null;
