@@ -41,15 +41,21 @@ async function persistBatch(client, dataset, rows) {
   await client.query('BEGIN');
   try {
     for (const item of rows) {
+      // PostgreSQL marks a transaction as failed after a statement error. Isolate each
+      // row with a savepoint so one malformed record does not poison the whole batch.
+      await client.query('SAVEPOINT renaest_row');
       try {
         const result = await client.query(
           'INSERT INTO siges_renaest_records(dataset,import_job_id,source_name,source_entry,period_year,period_month,municipality_code,municipality_name,uf,record_hash,row_data) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11::jsonb) ON CONFLICT(dataset,record_hash) DO NOTHING RETURNING id',
           [dataset,item.jobId,item.sourceName,item.entry,item.period.year,item.period.month,item.municipality.code,item.municipality.name,item.municipality.uf,item.recordHash,JSON.stringify(item.row)]
         );
+        await client.query('RELEASE SAVEPOINT renaest_row');
         if (result.rowCount) inserted++; else duplicate++;
       } catch (error) {
+        await client.query('ROLLBACK TO SAVEPOINT renaest_row');
+        await client.query('RELEASE SAVEPOINT renaest_row');
         rejected++;
-        if (error.code === '57P01' || error.code === '08006') throw error;
+        if (['57P01', '08000', '08003', '08006', '08001', '40001'].includes(error.code)) throw error;
       }
     }
     await client.query('COMMIT');
@@ -71,7 +77,7 @@ async function importRenaestZip({ filePath, dataset, sourceName, importJobId }) 
       entriesSeen++;
       await updateJob(client, jobId, { current_entry: entry.path, entries_seen: entriesSeen });
       const period = inferPeriod(entry.path || sourceName);
-      const parser = entry.pipe(parse({ bom: true, columns: headers => headers.map((h, i) => String(h || '').trim() || 'campo_' + (i + 1)), skip_empty_lines: true, relax_column_count: true, trim: true }));
+      const parser = entry.pipe(parse({ bom: true, columns: headers => headers.map((h, i) => String(h || '').trim() || 'campo_' + (i + 1)), delimiter: [',', ';', '\\t', '|'], skip_empty_lines: true, relax_column_count: true, trim: true }));
       for await (const row of parser) {
         rowsRead++;
         const municipality = identifyMunicipality(row);
