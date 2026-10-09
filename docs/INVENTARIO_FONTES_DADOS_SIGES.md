@@ -104,3 +104,29 @@ A auditoria do projeto Supabase SIGES mostrou 14 tabelas públicas sem registros
 5. Adicionar PRF, SENATRAN e DNIT com regras de conciliação.
 6. Incorporar as demais fontes após validação individual.
 7. Agendar coleta e auditoria dentro dos limites dos planos gratuitos.
+
+
+## Camada de catálogo persistente (fase implementada)
+
+O Supabase existente agora possui três tabelas de controle, com RLS habilitado:
+- `public.data_source_catalog`: 13 fontes cadastradas;
+- `public.data_source_resources`: recursos/URLs descobertos;
+- `public.data_ingestion_runs`: histórico de execuções e contagens.
+
+As tabelas foram criadas por migrações versionadas em `supabase/migrations/`. O catálogo foi semeado de forma idempotente. Nenhum CSV/ZIP externo foi importado nesta fase.
+
+Foi adicionada uma API administrativa no branch `audit/siges-data-source-catalog`:
+- `GET /api/admin/data-sources/health`: testa se a API consegue consultar o catálogo Supabase;
+- `GET /api/admin/data-sources`: lista fontes;
+- `GET /api/admin/data-sources/resources`: lista recursos descobertos;
+- `GET /api/admin/data-sources/runs`: lista as últimas execuções.
+
+Essas rotas exigem sessão válida do SIGES e perfil administrativo ENAT. A conexão usa somente o backend e exige duas variáveis no serviço Render: `SUPABASE_URL` e `SUPABASE_SERVICE_ROLE_KEY`. A chave de serviço jamais deve ser colocada no GitHub, no frontend ou em mensagens. As rotas ainda não foram testadas contra o Render porque o branch não foi implantado e as variáveis de ambiente não foram configuradas.
+
+## Estado verificado após a fase de catálogo
+
+- O Supabase confirmou 13 fontes no catálogo.
+- As tabelas novas têm RLS ligado e não têm políticas públicas; a API administrativa depende da chave de serviço somente no servidor.
+- O linter de segurança mostrou aviso informativo de RLS sem políticas para essas três tabelas. Isso é intencional neste momento para bloquear acesso via API pública; as consultas administrativas devem passar pelo backend.
+- O linter de performance apontou a chave estrangeira opcional `data_ingestion_runs.resource_id` sem índice; foi adicionada uma migração com índice para corrigir esse ponto.
+- Nenhuma rota de ingestão grava dados externos ainda; a próxima etapa é configurar a conexão de forma segura e validar as rotas em ambiente isolado antes de implementar importação em lotes.
