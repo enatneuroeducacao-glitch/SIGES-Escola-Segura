@@ -87,3 +87,16 @@ Este diagnóstico foi documentado na branch de auditoria. Não foi feito deploy 
 6. Executar testes de contrato API→banco→interface e só então preparar uma publicação controlada.
 
 As alterações de estado de ingestão e de rótulo foram feitas somente nesta branch de auditoria. Não foram publicadas em produção e ainda precisam passar por testes automatizados e de execução antes de serem consideradas homologadas.
+## Verificação do Render — 2026-10-09
+
+- Serviço consultado: `escola-segura-api`, plano Free, raiz `backend`, branch `main`; o deploy `dep-db4dbtk9v7es73a9b49g` está `live` e o build terminou com sucesso.
+- Logs de 2026-10-07 mostram `ENOENT` ao abrir `/opt/render/project/src/backend/data/db.json`.
+- Em três inicializações registradas em 2026-10-09, o backend emitiu a mensagem de criação do administrador SIGES. Isso é consistente com o armazenamento local não estar disponível/preservado em todas as inicializações; requer investigação de persistência e não permite garantir que os registros operacionais sobrevivam a reinícios.
+- Métricas de memória disponíveis para a janela consultada ficaram aproximadamente na faixa de 55–84 MB para as instâncias observadas. Não foi possível obter séries úteis de contagem/latência HTTP nesse retorno, então não se conclui que o tráfego ou os endpoints foram validados.
+- A consulta externa direta dos endpoints de health e RENAEST não foi possível pelo mecanismo de inspeção utilizado. Por isso, o estado funcional do endpoint RENAEST em produção permanece não confirmado.
+
+## Correções adicionais na branch de auditoria
+
+- A função `ensureAdmin()` não deve usar `SIGES2026` como senha administrativa padrão embutida. Na branch de auditoria, a criação inicial exige `SIGES_ADMIN_INITIAL_PASSWORD`; a senha não é redefinida usando fallback de código. **Esta alteração não foi publicada em produção** e, antes de adotá-la, a variável precisa estar configurada no Render para evitar bloquear a criação inicial do administrador.
+- O endpoint `/api/health` passa a indicar explicitamente que o armazenamento operacional ainda é `local_json` e que a persistência não está garantida. A presença das variáveis de integração do catálogo Supabase é informativa e não afirma que os registros operacionais já usem PostgreSQL.
+- As mudanças ainda não passaram por execução de testes Node, teste HTTP autenticado ou validação de interface. Foram revisadas por comparação do código e não devem ser consideradas homologadas.
