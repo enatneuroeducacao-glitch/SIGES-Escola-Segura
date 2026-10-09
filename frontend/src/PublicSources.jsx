@@ -20,7 +20,7 @@ function SourceCard({name,desc,active,onClick}){
     <button type="button" className="source-card-main" onClick={onClick}>
       <div className="source-icon"><Database size={20}/></div>
       <div><b>{name}</b><span>{desc}</span></div>
-      <em>{active?<><CheckCircle2 size={14}/> DADO INCORPORADO</>:'FONTE'}</em>
+      <em>{active?<><CheckCircle2 size={14}/> FONTE SELECIONADA</>:'FONTE'}</em>
     </button>
   </div>
 }
