@@ -46,19 +46,26 @@ function ensureValidationTestUsers(){
 }
 function ensureAdmin(){
   const db=read();
-  const initialPassword=String(process.env.SIGES_ADMIN_INITIAL_PASSWORD||'SIGES2026');
+  const initialPassword=String(process.env.SIGES_ADMIN_INITIAL_PASSWORD||'').trim();
   let u=db.users.find(x=>x.role==='enat' && (x.username==='admin' || x.email==='admin'));
   if(!u){
+    if(!initialPassword){
+      console.error('Administrador SIGES não criado: defina SIGES_ADMIN_INITIAL_PASSWORD no ambiente antes do primeiro acesso.');
+      return;
+    }
     u={id:'usr_admin_local',role:'enat',username:'admin',name:'Administrador ENAT',email:'admin',passwordHash:bcrypt.hashSync(initialPassword,12),status:'active',profile:{institution:'ENAT'},createdAt:new Date().toISOString(),mustChangePassword:true};
     db.users.push(u);
     audit(db,'ADMIN_BOOTSTRAP',u.id,{username:'admin',temporaryPassword:true});
     write(db);
-    console.log('Administrador SIGES criado com credencial inicial configurada.');
+    console.log('Administrador SIGES criado; credencial inicial veio da variável de ambiente.');
     return;
   }
-  // A senha inicial só pode ser reaplicada enquanto a conta ainda exige troca.
-  // Depois que o administrador define sua senha definitiva, não sobrescrevemos a conta.
+  // Nunca substitui senha usando uma credencial padrão embutida no código.
   if(u.mustChangePassword===true){
+    if(!initialPassword){
+      console.error('A conta administrativa exige troca de senha, mas SIGES_ADMIN_INITIAL_PASSWORD não está configurada.');
+      return;
+    }
     const nextHash=bcrypt.hashSync(initialPassword,12);
     if(!bcrypt.compareSync(initialPassword,u.passwordHash||'')){
       u.passwordHash=nextHash;
@@ -160,7 +167,16 @@ function auth(req,res,next){
   }catch{res.status(401).json({error:'Sessão inválida.'})}
 }
 
-app.get('/api/health',(req,res)=>res.json({ok:true,system:'SIGES',mode:'local'}));
+app.get('/api/health',(req,res)=>{
+  res.set('Cache-Control','no-store');
+  res.json({
+    ok:true,
+    system:'SIGES',
+    mode:'local',
+    storage:{operational:'local_json',persistence:'not_guaranteed',supabaseCatalogConfigured:Boolean(String(process.env.SUPABASE_URL||'').trim()&&String(process.env.SUPABASE_SERVICE_ROLE_KEY||'').trim())},
+    warnings:['Os registros operacionais ainda usam backend/data/db.json; a configuração do catálogo Supabase não significa que esses registros estejam persistidos no PostgreSQL.']
+  });
+});
 app.use('/api/public-sources',buildPublicSourcesRouter());
 app.use('/api/admin/data-sources',buildDataSourcesAdminRouter({auth}));
 
