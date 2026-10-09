@@ -8,7 +8,7 @@ const { Pool } = require('pg');
 const BATCH_SIZE = Math.max(100, Math.min(5000, Number(process.env.SIGES_RENAEST_BATCH_SIZE) || 1000));
 const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: process.env.DATABASE_SSL === 'false' ? false : { rejectUnauthorized: false }, max: 3 });
 
-function normalizeKey(value) { return String(value || '').normalize('NFD').replace(/[\\u0300-\\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
+function normalizeKey(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ''); }
 function pick(row, patterns) {
   for (const [key, value] of Object.entries(row)) {
     if (patterns.some(pattern => pattern.test(normalizeKey(key))) && String(value ?? '').trim() !== '') return String(value).trim();
@@ -23,7 +23,7 @@ function identifyMunicipality(row) {
   const code = pick(row, [/^(codigomunicipio|codmunicipio|municipioibge|codibge|codmun|ibge)$/]);
   const name = pick(row, [/^(municipio|nomemunicipio|municipionome|cidade|localidade)$/]);
   const uf = pick(row, [/^(uf|siglauf|unidadefederativa)$/]);
-  return { code: code ? code.replace(/\\D/g, '').padStart(7, '0') : null, name, uf: uf ? uf.toUpperCase().slice(0, 2) : null };
+  return { code: code ? code.replace(/\D/g, '').padStart(7, '0') : null, name, uf: uf ? uf.toUpperCase().slice(0, 2) : null };
 }
 function hashRow(dataset, row) {
   const stable = Object.keys(row).sort().map(key => [key, String(row[key] ?? '').trim()]);
@@ -66,7 +66,7 @@ async function importRenaestZip({ filePath, dataset, sourceName, importJobId }) 
     await client.query('INSERT INTO siges_import_jobs(id,dataset,source_name,file_bytes,status,started_at) VALUES ($1,$2,$3,$4,\'processing\',NOW())', [jobId, dataset, sourceName, stat.size]);
     const zip = fs.createReadStream(filePath).pipe(unzipper.Parse({ forceStream: true }));
     for await (const entry of zip) {
-      if (entry.type !== 'File' || !/\\.(csv|txt)$/i.test(entry.path) || /(^|\\/)\\./.test(entry.path)) { entry.autodrain(); continue; }
+      if (entry.type !== 'File' || !/\.(csv|txt)$/i.test(entry.path) || /(^|\/)\./.test(entry.path)) { entry.autodrain(); continue; }
       entriesSeen++;
       await updateJob(client, jobId, { current_entry: entry.path, entries_seen: entriesSeen });
       const period = inferPeriod(entry.path || sourceName);
