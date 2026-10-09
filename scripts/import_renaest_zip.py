@@ -54,6 +54,7 @@ def main():
     archive_hash = sha.hexdigest()
     with zipfile.ZipFile(args.zip_path) as zf, psycopg.connect(dsn) as conn:
         ensure_schema(conn)
+        conn.commit()  # torna cada arquivo uma transação independente
         members = set(zf.namelist())
         missing = set(FILES) - members
         if missing:
