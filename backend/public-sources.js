@@ -29,7 +29,7 @@ function extractRoad(title){let s=clean(title.replace(/^Estudo Técnico(?: Redut
 function extractSpeed(title){const m=String(title||'').match(/(?:redutor|controlador).*?(30|40|50|60|70|80)\s*km\/?h/i);return m?Number(m[1]):null}
 function parseDetrans(html){const items=[];const re=/<a[^>]+href=["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>([\s\S]{0,900}?)(?=<a\s|<\/section|$)/gi;let m;while((m=re.exec(html))){const title=decode(m[2]);if(!/Estudo Técnico|Atualização Bienal/i.test(title))continue;const tail=decode(m[3]);const dateMatch=tail.match(/Documento disponibilizado em\s*(\d{2}\/\d{2}\/\d{4})/i);items.push({title,url:new URL(m[1],DETRANS_URL).href,date:dateMatch?dateMatch[1]:null,year:dateMatch?Number(dateMatch[1].slice(-4)):null,road:extractRoad(title),speedKmh:extractSpeed(title)})}const unique=[];const seen=new Set();for(const x of items){if(!seen.has(x.url)){seen.add(x.url);unique.push(x)}}const years={};for(const x of unique){const y=x.year||'indefinido';years[y]=(years[y]||0)+1}const corridors={};for(const x of unique){if(x.road&&x.road!=='Outros')corridors[x.road]=(corridors[x.road]||0)+1}const ranking=Object.entries(corridors).map(([road,count])=>({road,count})).sort((a,b)=>b.count-a.count).map((x,i)=>({...x,rank:i+1}));const latestYear=Math.max(...unique.map(x=>x.year||0));const latestDate=unique.map(x=>x.date).filter(Boolean).sort((a,b)=>b.split('/').reverse().join('').localeCompare(a.split('/').reverse().join('')))[0]||null;return{source:'DETRANS',sourceName:'Departamento de Trânsito de Joinville',municipality:'Joinville',retrievedAt:new Date().toISOString(),latestCompleteYear:latestYear||null,latestPublicationDate:latestDate?latestDate.split('/').reverse().join('-'):null,methodology:'Inventário somente leitura dos estudos técnicos publicados oficialmente pelo DETRANS. O ranking representa quantidade de estudos por corredor, não acidentes. Não se calcula variação 2024→2025 quando a fonte não fornece série anual homogênea.',urls:{publication:DETRANS_URL},summary:{totalOccurrences:null,totalStudies:unique.length,studiesByYear:years},corridors:ranking,documents:unique.slice(0,120)}}
 async function loadDetrans(force=false){if(!force&&cacheGet('detrans')&&cache.detrans.expiresAt>Date.now())return cache.detrans.data;const data=parseDetrans(await fetchText(DETRANS_URL));cacheSet('detrans',data);return data}
-async function getJson(url){const r=await withTimeout(fetch(url,{headers:{'User-Agent':'SIGES-Escola-Segura/3.7 public-data-reader'}}));if(!r.ok)throw new Error(`Fonte pública respondeu HTTP ${r.status}`);return r.json()}
+async function getJson(url){const r=await withTimeout(fetch(url,{headers:{'User-Agent':'SIGES-Escola-Segura/3.7 public-data-reader'}}));if(!r.ok)throw new Error(`Fonte pública respondeu HTTP ${r.status}`);const data=await r.json();if(data&&data.error)throw new Error(data.error.message||'A fonte pública rejeitou a consulta.');return data}
 function catalogResources(pkg,yearPattern){const resources=Array.isArray(pkg?.result?.resources)?pkg.result.resources:[];return resources.filter(x=>yearPattern.test(String(x.name||x.description||''))).map(x=>({id:x.id,name:x.name||x.description||'Recurso',format:x.format||null,url:x.url||null,lastModified:x.last_modified||x.metadata_modified||null,size:x.size||null})).sort((a,b)=>String(b.name).localeCompare(String(a.name),undefined,{numeric:true}));}
 async function loadRenaest(force=false){
   if(!force&&cacheGet('renaest')&&cache.renaest.expiresAt>Date.now())return cache.renaest.data;
@@ -136,15 +136,15 @@ async function loadSimgeo(force=false){
   const monthStart2025=4;
   const month2025Results=baseResults.slice(monthStart2025,monthStart2025+12);
   const month2026Results=baseResults.slice(monthStart2025+12);
-  const monthly2025=month2025Results.map((r,i)=>({month:i+1,count:r.status==='fulfilled'?Number(r.value.count)||0:null,status:r.status==='fulfilled'?'ok':'unavailable'}));
-  const monthly2026=month2026Results.map((r,i)=>({month:i+1,count:r.status==='fulfilled'?Number(r.value.count)||0:null,status:r.status==='fulfilled'?'ok':'unavailable'}));
+  const monthly2025=month2025Results.map((r,i)=>{const count=r.status==='fulfilled'?Number(r.value?.count):NaN;return{month:i+1,count:Number.isFinite(count)?count:null,status:Number.isFinite(count)?'ok':'unavailable'}});
+  const monthly2026=month2026Results.map((r,i)=>{const count=r.status==='fulfilled'?Number(r.value?.count):NaN;return{month:i+1,count:Number.isFinite(count)?count:null,status:Number.isFinite(count)?'ok':'unavailable'}});
   const layers=(layersJson.layers||[]).map(x=>({id:x.id,name:x.name,type:x.type}));
   const cycleCorridors=(cycleJson.features||[]).map(f=>f.attributes||{}).filter(x=>clean(x.nome_logra));
   const successful=baseResults.filter(r=>r.status==='fulfilled').length+roadResults.filter(r=>r.status==='fulfilled').length;
   const requested=baseResults.length+roadResults.length;
   const failed=requested-successful;
-  const accidents2025Count=monthly2025.reduce((sum,x)=>sum+(Number.isFinite(x.count)?x.count:0),0);
-  const accidents2026Count=monthly2026.reduce((sum,x)=>sum+(Number.isFinite(x.count)?x.count:0),0);
+  const accidents2025Count=monthly2025.some(x=>x.status==='ok')?monthly2025.reduce((sum,x)=>sum+(Number.isFinite(x.count)?x.count:0),0):null;
+  const accidents2026Count=monthly2026.some(x=>x.status==='ok')?monthly2026.reduce((sum,x)=>sum+(Number.isFinite(x.count)?x.count:0),0):null;
   const data={
     source:'SIMGEO',
     sourceName:'Sistema de Informações Municipais Georreferenciadas',
