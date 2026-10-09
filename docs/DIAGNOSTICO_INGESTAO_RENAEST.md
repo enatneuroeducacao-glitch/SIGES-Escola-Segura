@@ -100,3 +100,14 @@ As alterações de estado de ingestão e de rótulo foram feitas somente nesta b
 - A função `ensureAdmin()` não deve usar `SIGES2026` como senha administrativa padrão embutida. Na branch de auditoria, a criação inicial exige `SIGES_ADMIN_INITIAL_PASSWORD`; a senha não é redefinida usando fallback de código. **Esta alteração não foi publicada em produção** e, antes de adotá-la, a variável precisa estar configurada no Render para evitar bloquear a criação inicial do administrador.
 - O endpoint `/api/health` passa a indicar explicitamente que o armazenamento operacional ainda é `local_json` e que a persistência não está garantida. A presença das variáveis de integração do catálogo Supabase é informativa e não afirma que os registros operacionais já usem PostgreSQL.
 - As mudanças ainda não passaram por execução de testes Node, teste HTTP autenticado ou validação de interface. Foram revisadas por comparação do código e não devem ser consideradas homologadas.
+## Ajuste de mapeamento territorial no parser (branch de auditoria)
+
+- O parser agora examina todos os membros CSV/TXT do ZIP, mas somente agrega linhas de arquivos identificados como Acidentes/Sinistros. O arquivo Localidade não é mais contado como se fosse um registro de acidente.
+- A identificação do município passou a reconhecer `codigo_ibge` e `uf_acidente`, campos documentados no dicionário RENAEST. A contagem de registros continua sendo apresentada como linhas, sem inferir automaticamente que cada linha equivale a um sinistro único.
+- O campo `qtde_acidente` passa a ser candidato explícito para o total de sinistros, quando estiver presente.
+- Referência de esquema: estudo ON SV 2026, Apêndice I — especificação dos campos RENAEST, que lista `num_acidente`, `chv_localidade`, `codigo_ibge`, `uf_acidente` e `qtde_acidente`: https://www.onsv.org.br/source/files/originals/Analise_da_Completude_dos_Dados_do_Registro_Nacional_de_Sinistros_e_Estatisticas_de_Transito_RENAEST_-_2026-318675.pdf
+- Limitação ainda ativa: o download continua rejeitando ZIPs acima de 50 MiB, enquanto os recursos mensais oficiais podem ter centenas de MiB. Portanto, o ajuste de mapeamento não torna a ingestão mensal funcional até ser substituído por processamento streaming.
+
+## Segurança do administrador
+
+- A branch de auditoria remove o fallback de senha `SIGES2026` e exige a variável `SIGES_ADMIN_INITIAL_PASSWORD` para criar a conta administrativa inicial ou sincronizar uma conta que ainda exige troca. Configurar essa variável antes de qualquer implantação desta mudança é obrigatório; não aplicar em produção sem confirmar o acesso administrativo atual.
