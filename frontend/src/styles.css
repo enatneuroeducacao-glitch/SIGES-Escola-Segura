@@ -243,3 +243,43 @@
  .nav-group-head span{font-size:9px!important}
  .app main>section{padding:12px 9px!important}
 }
+
+
+/* MOBILE: navegação lateral recolhível; não consome a altura da página */
+.mobile-menu-button,.mobile-drawer-top,.mobile-nav-backdrop{display:none}
+@media(max-width:700px){
+ .app aside{position:fixed!important;inset:0 auto 0 0!important;width:min(84vw,310px)!important;height:100dvh!important;max-height:100dvh!important;z-index:100!important;transform:translateX(-105%)!important;transition:transform .22s ease!important;box-shadow:none!important}
+ .app.mobile-nav-open aside{transform:translateX(0)!important;box-shadow:18px 0 42px #071b2b55!important}
+ .mobile-nav-backdrop{display:block!important;position:fixed!important;inset:0!important;z-index:99!important;background:#071522a8!important;border:0!important;padding:0!important}
+ .mobile-drawer-top{display:flex!important;align-items:center!important;justify-content:space-between!important;padding:12px 16px!important;min-height:48px!important;border-bottom:1px solid #1d2d3d!important;color:#e4edf2!important}
+ .mobile-drawer-top button{border:0!important;background:transparent!important;color:#fff!important;font-size:28px!important;line-height:1!important;padding:0 5px!important}
+ .app aside .nav-groups{display:flex!important;flex-direction:column!important;flex-wrap:nowrap!important;gap:2px!important;padding:10px!important;overflow-y:auto!important;max-height:none!important;flex:1!important}
+ .app aside .nav-group{position:static!important;display:block!important;flex:0 0 auto!important}
+ .app aside .nav-group-head{display:flex!important;width:100%!important;min-height:42px!important;padding:11px 12px!important;gap:10px!important}
+ .app aside .nav-group-head span{display:inline!important;font-size:12px!important}
+ .app aside .nav-group-head b{display:inline!important;font-size:12px!important}
+ .app aside .nav-group-items{display:grid!important;position:static!important;min-width:0!important;max-width:none!important;max-height:none!important;overflow:visible!important;padding:3px 0 5px 10px!important;margin:0 0 4px 9px!important;border:0!important;border-left:1px solid #315266!important;border-radius:0!important;box-shadow:none!important;background:transparent!important}
+ .app aside .nav-group-items button{display:flex!important;width:100%!important;min-height:38px!important;padding:9px 10px!important;white-space:normal!important}
+ .app aside .nav-group-items button span{display:inline!important;font-size:11px!important}
+ .app aside .side-foot{flex:0 0 auto!important}
+ .app main{margin:0!important;width:100%!important;min-width:0!important}
+ .app main>header{position:sticky!important;top:0!important;display:grid!important;grid-template-columns:auto minmax(0,1fr)!important;grid-template-rows:auto auto!important;gap:8px!important;height:auto!important;min-height:0!important;padding:10px 12px!important;z-index:20!important}
+ .mobile-menu-button{display:inline-flex!important;align-items:center!important;justify-content:center!important;gap:6px!important;background:#17384e!important;color:#fff!important;border:0!important;border-radius:8px!important;padding:9px 10px!important;font-size:12px!important;font-weight:700!important}
+ .mobile-menu-button span{font-size:17px!important;line-height:1!important}
+ .breadcrumb{align-self:center!important;min-width:0!important;overflow:hidden!important;text-overflow:ellipsis!important;white-space:nowrap!important;font-size:11px!important}
+ .app main>header .head-right{grid-column:1/-1!important;display:flex!important;width:100%!important;flex:1 1 100%!important;gap:8px!important}
+ .app main>header .search{flex:1 1 auto!important;width:auto!important;min-width:0!important}
+ .app main>section{width:100%!important;max-width:100%!important;padding:14px 12px!important}
+ .hero{display:flex!important;flex-direction:column!important;align-items:stretch!important;padding:22px 18px!important;gap:18px!important}
+ .hero h1{font-size:clamp(25px,7vw,34px)!important;line-height:1.12!important}
+ .hero p{font-size:13px!important}
+ .hero button{width:100%!important;min-height:48px!important;justify-content:center!important;font-size:13px!important}
+ .section-head{align-items:flex-start!important;gap:10px!important;flex-wrap:wrap!important}
+ .cards,.grid2,.course-grid,.portal-kpis{grid-template-columns:repeat(2,minmax(0,1fr))!important}
+ .table-wrap{max-width:100%!important;overflow-x:auto!important}
+}
+@media(max-width:390px){
+ .app main>section{padding:12px 9px!important}
+ .cards,.grid2,.course-grid,.portal-kpis{grid-template-columns:minmax(0,1fr)!important}
+ .mobile-menu-button{padding:8px!important}
+}
