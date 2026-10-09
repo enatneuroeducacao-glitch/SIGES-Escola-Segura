@@ -111,3 +111,18 @@ As alterações de estado de ingestão e de rótulo foram feitas somente nesta b
 ## Segurança do administrador
 
 - A branch de auditoria remove o fallback de senha `SIGES2026` e exige a variável `SIGES_ADMIN_INITIAL_PASSWORD` para criar a conta administrativa inicial ou sincronizar uma conta que ainda exige troca. Configurar essa variável antes de qualquer implantação desta mudança é obrigatório; não aplicar em produção sem confirmar o acesso administrativo atual.
+## Qualidade dos registros territoriais já existentes no Supabase
+
+Consulta somente leitura à tabela `public.units` em 2026-10-09:
+
+- 162 unidades cadastradas.
+- 162 unidades sem `primary_source` preenchida.
+- 162 unidades sem `data_status` preenchido.
+
+Esse resultado não prova que os nomes/endereço das unidades estejam errados; prova que o banco não possui rastreabilidade de fonte e estado de validação nesses campos. Antes de usar esses registros para classificação territorial ou decisão de segurança escolar, é necessário reconciliar cada unidade com cadastro oficial (por exemplo, INEP/Secretaria de Educação), registrar a fonte e a data da verificação, e separar dado confirmado de dado ausente ou inferido.
+
+## Estado dos testes
+
+- A inspeção do código e a revisão das consultas ao banco foram realizadas; o parser foi ajustado na branch de auditoria para filtrar as linhas de sinistros por `codigo_ibge`/`uf_acidente` e não contar linhas de Localidade como sinistros.
+- O limite de 50 MiB continua intencionalmente ativo até existir uma implementação de streaming; foi corrigida apenas a mensagem de erro que informava incorretamente 100 MB.
+- Não foram executados testes de integração/HTTP nem um teste de importação completo com o ZIP de 445 MB. Não declarar a ingestão como funcional até esses testes passarem.
