@@ -3,15 +3,27 @@ const express = require('express');
 function buildDataSourcesAdminRouter({ auth }) {
   const router = express.Router();
 
+  function getSupabaseBase() {
+    const raw = String(process.env.SUPABASE_URL || '').trim();
+    if (!raw) return null;
+    try {
+      const url = new URL(raw);
+      if (url.protocol !== 'https:' || url.username || url.password || url.search || url.hash) return null;
+      return url.toString().replace(/\/$/, '');
+    } catch {
+      return null;
+    }
+  }
+
   function configured() {
-    return Boolean(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+    return Boolean(getSupabaseBase() && process.env.SUPABASE_SERVICE_ROLE_KEY);
   }
 
   async function supabaseGet(path) {
-    const base = String(process.env.SUPABASE_URL || '').replace(/\/$/, '');
+    const base = getSupabaseBase();
     const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
     if (!base || !key) {
-      const error = new Error('Integração Supabase não configurada no backend.');
+      const error = new Error('Integração Supabase não configurada corretamente no backend; SUPABASE_URL deve ser HTTPS.');
       error.statusCode = 503;
       throw error;
     }
@@ -46,7 +58,7 @@ function buildDataSourcesAdminRouter({ auth }) {
       res.set('Cache-Control', 'no-store');
       res.json({ ok: true, status: 'connected', checkedAt: new Date().toISOString(), querySucceeded: Array.isArray(rows) });
     } catch (error) {
-      res.status(error.statusCode || 502).json({ ok: false, status: 'connection_failed', checkedAt: new Date().toISOString(), error: error.message });
+      res.status(error.statusCode || 502).json({ ok: false, status: 'connection_failed', checkedAt: new Date().toISOString(), error: 'Falha ao consultar o catálogo Supabase; verifique a configuração e os logs privados do backend.' });
     }
   });
 
@@ -56,7 +68,7 @@ function buildDataSourcesAdminRouter({ auth }) {
       res.set('Cache-Control', 'no-store');
       res.json({ sources: rows, count: rows.length, storage: 'supabase', retrievedAt: new Date().toISOString() });
     } catch (error) {
-      res.status(error.statusCode || 502).json({ error: 'Não foi possível consultar o catálogo persistente do SIGES.', detail: error.message });
+      res.status(error.statusCode || 502).json({ error: 'Não foi possível consultar o catálogo persistente do SIGES.' });
     }
   });
 
@@ -66,7 +78,7 @@ function buildDataSourcesAdminRouter({ auth }) {
       res.set('Cache-Control', 'no-store');
       res.json({ resources: rows, count: rows.length, storage: 'supabase', retrievedAt: new Date().toISOString() });
     } catch (error) {
-      res.status(error.statusCode || 502).json({ error: 'Não foi possível consultar os recursos catalogados.', detail: error.message });
+      res.status(error.statusCode || 502).json({ error: 'Não foi possível consultar os recursos catalogados.' });
     }
   });
 
@@ -76,7 +88,7 @@ function buildDataSourcesAdminRouter({ auth }) {
       res.set('Cache-Control', 'no-store');
       res.json({ runs: rows, count: rows.length, storage: 'supabase', retrievedAt: new Date().toISOString() });
     } catch (error) {
-      res.status(error.statusCode || 502).json({ error: 'Não foi possível consultar o histórico de importações.', detail: error.message });
+      res.status(error.statusCode || 502).json({ error: 'Não foi possível consultar o histórico de importações.' });
     }
   });
 
