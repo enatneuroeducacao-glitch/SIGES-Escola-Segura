@@ -61,3 +61,29 @@ A próxima implementação deve ser uma ingestão em lotes, idempotente e audit�
 ## Ambiente e produção
 
 Este diagnóstico foi documentado na branch de auditoria. Não foi feito deploy nem alteração das tabelas operacionais do SIGES. O branch de produção continua separado até a ingestão passar pelos critérios acima.
+
+## Achados adicionais na revisão do código de produção
+
+### O que o importador RENAEST realmente processa
+
+- parseRenaestZip escolhe exclusivamente arquivos cujo nome contém localidade ou municipio quando existe algum arquivo assim dentro do ZIP. Nesse cenário, os arquivos de acidentes/sinistros e vítimas ficam fora do processamento. Logo, as linhas encontradas em Joinville podem ser linhas de localidade, população ou frota, e não registros de acidentes.
+- O backend usa entry.getData(), decodifica o arquivo completo em uma string e monta um array com todas as linhas. Somado ao ZIP inteiro mantido em memória, isso não é processamento em fluxo e não é adequado para os arquivos nacionais de vários gigabytes descompactados.
+- Mesmo quando todas as tentativas de download falham, runRenaestIngestion terminava com ingestionStatus: complete. Isso mascara falhas operacionais. Corrigido nesta branch de auditoria: o estado final agora diferencia complete, partial e failed; o estado da fonte diferencia online, partial e offline.
+- A interface PublicSources.jsx exibia “DADO INCORPORADO” apenas porque a fonte estava selecionada. Isso podia sugerir persistência no banco que não foi demonstrada. Corrigido nesta branch para “FONTE SELECIONADA”.
+
+### Falha arquitetural de persistência
+
+- backend/server.js usa backend/data/db.json como armazenamento operacional e implementa gravação por fs.writeFileSync. O health endpoint informa mode: local.
+- backend/package.json não inclui driver PostgreSQL nem cliente Supabase. Portanto, os dados operacionais do backend não estão integrados ao Supabase apenas porque o projeto Supabase possui tabelas.
+- Na consulta atual, as tabelas territoriais centrais têm 162 linhas em public.units e 4 em public.evidence, mas o catálogo RENAEST permanece com 13 fontes, 0 recursos e 0 execuções de ingestão. É necessário integrar a leitura do SIGES ao banco persistente e confirmar que a API e a tela usam os mesmos registros.
+
+### Próximas correções obrigatórias
+
+1. Validar cabeçalhos e chaves de Acidentes/Sinistros e Vitimas antes de mapear relacionamentos.
+2. Substituir o processamento ZIP/CSV em memória por streaming com limite de memória, checkpoints e lotes.
+3. Persistir somente dados normalizados/agregados adequados à capacidade do plano gratuito; não tentar gravar 4,76 GB de CSV bruto no banco gratuito.
+4. Implementar idempotência, checksum, reexecução segura e contadores auditáveis.
+5. Integrar as consultas da API ao Supabase sem expor a chave service_role ao navegador.
+6. Executar testes de contrato API→banco→interface e só então preparar uma publicação controlada.
+
+As alterações de estado de ingestão e de rótulo foram feitas somente nesta branch de auditoria. Não foram publicadas em produção e ainda precisam passar por testes automatizados e de execução antes de serem consideradas homologadas.
