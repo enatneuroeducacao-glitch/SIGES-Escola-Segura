@@ -97,7 +97,7 @@ async function downloadRenaestResource(resource){
   const declared=Number(response.headers.get('content-length')||0);
   if(declared>50*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 50 MB');
   const bytes=Buffer.from(await response.arrayBuffer());
-  if(bytes.length>50*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 100 MB');
+  if(bytes.length>50*1024*1024)throw new Error('Arquivo ZIP excede o limite de segurança de 50 MiB');
   return parseRenaestZip(bytes,resource);
 }
 let renaestJob=null;
