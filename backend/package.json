@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "import:renaest": "node run-renaest-import.js"
+    "import:renaest": "node run-renaest-import.js",
+    "test:renaest": "node --test renaest-stream-import.test.js"
   },
   "dependencies": {
     "bcryptjs": "^2.4.3",
