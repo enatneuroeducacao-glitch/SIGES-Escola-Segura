@@ -125,8 +125,10 @@ Essas rotas exigem sessão válida do SIGES e perfil administrativo ENAT. A cone
 
 ## Estado verificado após a fase de catálogo
 
-- O Supabase confirmou 13 fontes no catálogo.
-- As tabelas novas têm RLS ligado e não têm políticas públicas; a API administrativa depende da chave de serviço somente no servidor.
-- O linter de segurança mostrou aviso informativo de RLS sem políticas para essas três tabelas. Isso é intencional neste momento para bloquear acesso via API pública; as consultas administrativas devem passar pelo backend.
-- O linter de performance apontou a chave estrangeira opcional `data_ingestion_runs.resource_id` sem índice; foi adicionada uma migração com índice para corrigir esse ponto.
-- Nenhuma rota de ingestão grava dados externos ainda; a próxima etapa é configurar a conexão de forma segura e validar as rotas em ambiente isolado antes de implementar importação em lotes.
+- Consulta direta ao Supabase confirmou **13 fontes ativas** em `public.data_source_catalog`, **0 recursos descobertos** em `public.data_source_resources` e **0 execuções de ingestão** em `public.data_ingestion_runs`.
+- As três tabelas de controle têm RLS habilitado e não têm políticas públicas. O aviso informativo `rls_enabled_no_policy` é esperado neste desenho; não se deve liberar acesso público para contornar o aviso.
+- As migrações remotas confirmadas incluem `20261009133325`, `20261009133345` e `20261009133502`; a última adiciona índice à chave estrangeira `data_ingestion_runs.resource_id`.
+- A revisão de performance posterior à alteração ainda lista avisos preexistentes em outras tabelas do SIGES, incluindo chaves estrangeiras sem índice e otimização de políticas RLS. O índice de `data_ingestion_runs.resource_id` aparece como não utilizado porque ainda não há execuções registradas; isso, isoladamente, não justifica removê-lo.
+- Revisão de segurança do router no branch confirmou: autenticação existente, verificação de perfil `enat`, rotas somente de leitura, validação de que `SUPABASE_URL` usa HTTPS e respostas sem detalhes brutos de erro do Supabase.
+- A API ainda **não foi implantada nem testada em runtime**. O serviço Render de produção continua na branch `main`; o código desta fase permanece em `audit/siges-data-source-catalog`. Não foram configuradas variáveis secretas nem importados CSV/ZIP externos.
+- Próximo passo seguro: preparar uma validação controlada da API antes de qualquer implantação; somente depois testar a conexão do backend e implementar ingestão RENAEST por lotes com idempotência.
