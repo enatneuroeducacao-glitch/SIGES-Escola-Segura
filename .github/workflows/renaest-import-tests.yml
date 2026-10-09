@@ -1,0 +1,39 @@
+name: SIGES RENAEST importer tests
+
+on:
+  pull_request:
+    paths:
+      - "backend/renaest-stream-import.js"
+      - "backend/inspect-renaest-zip.js"
+      - "backend/renaest-stream-import.test.js"
+      - "backend/package.json"
+      - ".github/workflows/renaest-import-tests.yml"
+  push:
+    branches:
+      - "feature/renaest-streaming-import"
+    paths:
+      - "backend/renaest-stream-import.js"
+      - "backend/inspect-renaest-zip.js"
+      - "backend/renaest-stream-import.test.js"
+      - "backend/package.json"
+      - ".github/workflows/renaest-import-tests.yml"
+
+jobs:
+  importer-tests:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+      - name: Syntax check
+        run: node --check renaest-stream-import.js && node --check run-renaest-import.js && node --check inspect-renaest-zip.js
+      - name: Unit tests
+        run: npm run test:renaest
