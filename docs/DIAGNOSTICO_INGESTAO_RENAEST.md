@@ -18,6 +18,23 @@ O backend atual em `backend/public-sources.js` baixa arquivos RENAEST para memó
 
 O catálogo oficial publica arquivos mensais RENAEST com centenas de MiB. A página do recurso de setembro de 2025 informa 463,6 MiB; outros recursos mensais indexados aparecem em torno de 438–500 MiB. Assim, o limite atual de 50 MiB impede a ingestão desses arquivos oficiais. Fonte: https://dados.transportes.gov.br/dataset/renaest
 
+## Pré-validação do arquivo enviado
+
+Foi adicionada a ferramenta somente de leitura `scripts/renaest_preflight.py`. Ela percorre os CSVs/TXTs dentro do ZIP em fluxo, sem descompactar o conjunto inteiro para o disco, e produz um relatório JSON com cabeçalhos, delimitador, codificação, tamanho, CRC do membro e contagem de linhas. Quando identifica colunas de município/UF/código IBGE, também conta as linhas compatíveis com Joinville/SC. Ela não envia dados ao banco.
+
+Uso local (Python 3 padrão, sem instalar dependências):
+
+```bash
+python scripts/renaest_preflight.py "renaest_dabertos_20260412 (1)(1).zip" --json renaest-preflight.json
+```
+
+Cabeçalhos verificados nos dois CSVs individuais que já estão disponíveis na biblioteca:
+
+- `Localidade_DadosAbertos_20260412.csv`: `chv_localidade; ano_referencia; mes_referencia; mes_ano_referencia; regiao; uf; codigo_ibge; municipio; regiao_metropolitana; qtde_habitantes; frota_total; frota_circulante`.
+- `TipoVeiculo_DadosAbertos_20260412.csv`: `num_acidente; tipo_veiculo; ind_veic_estrangeiro; qtde_veiculos`.
+
+Os cabeçalhos de Sinistros e Vitimas ainda precisam ser confirmados pelo relatório de pré-validação antes de definir chaves estrangeiras e tabelas finais. Não foi inferida uma relação entre tabelas apenas pelos nomes dos arquivos.
+
 ## Decisão segura
 
 Não aumentar simplesmente o limite de ZIP nem carregar arquivos completos na memória do Render Free. Isso pode causar consumo excessivo de memória, reinício do serviço e nenhuma persistência durável.
