@@ -25,9 +25,10 @@ function identifyMunicipality(row) {
   const uf = pick(row, [/^(uf|siglauf|unidadefederativa)$/]);
   return { code: code ? code.replace(/\D/g, '').padStart(7, '0') : null, name, uf: uf ? uf.toUpperCase().slice(0, 2) : null };
 }
-function hashRow(dataset, row) {
+function hashRow(dataset, row, period = {}) {
   const stable = Object.keys(row).sort().map(key => [key, String(row[key] ?? '').trim()]);
-  return crypto.createHash('sha256').update(dataset + '\\n' + JSON.stringify(stable)).digest('hex');
+  const periodKey = (period.year || '') + '-' + (period.month || '');
+  return crypto.createHash('sha256').update(dataset + '\n' + periodKey + '\n' + JSON.stringify(stable)).digest('hex');
 }
 async function updateJob(client, id, patch) {
   if (!id) return;
@@ -74,7 +75,7 @@ async function importRenaestZip({ filePath, dataset, sourceName, importJobId }) 
       for await (const row of parser) {
         rowsRead++;
         const municipality = identifyMunicipality(row);
-        batch.push({ jobId, sourceName, entry: entry.path, period, municipality, recordHash: hashRow(dataset, row), row });
+        batch.push({ jobId, sourceName, entry: entry.path, period, municipality, recordHash: hashRow(dataset, row, period), row });
         if (batch.length >= BATCH_SIZE) {
           const result = await persistBatch(client, dataset, batch);
           rowsInserted += result.inserted; rowsDuplicate += result.duplicate; rowsRejected += result.rejected; batch = [];
